@@ -1,0 +1,60 @@
+package cc.zimbri.metrics;
+
+import io.papermc.paper.event.player.AsyncChatEvent;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerLoginEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.LongAdder;
+
+/**
+ * Monotonic event counters, the one thing UnifiedMetrics exposes that cannot be sampled —
+ * a gauge read every 5s would miss joins between reads.
+ *
+ * <p>Listeners are MONITOR/ignoreCancelled so counting never influences gameplay, and
+ * LongAdder keeps the async chat handler off a contended lock.
+ */
+final class EventCounters implements Listener {
+
+    private final Map<String, LongAdder> counts = new LinkedHashMap<>();
+
+    EventCounters() {
+        for (String k : new String[]{"login", "join", "quit", "chat", "death"}) {
+            counts.put(k, new LongAdder());
+        }
+    }
+
+    private void bump(String key) {
+        LongAdder a = counts.get(key);
+        if (a != null) a.increment();
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onLogin(PlayerLoginEvent e) { bump("login"); }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(PlayerJoinEvent e) { bump("join"); }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onQuit(PlayerQuitEvent e) { bump("quit"); }
+
+    // Paper's Adventure chat event, not the deprecated Bukkit AsyncPlayerChatEvent —
+    // that one is not guaranteed to fire on a modern chat pipeline.
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onChat(AsyncChatEvent e) { bump("chat"); }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onDeath(PlayerDeathEvent e) { bump("death"); }
+
+    Map<String, Long> snapshot() {
+        Map<String, Long> out = new LinkedHashMap<>();
+        counts.forEach((k, v) -> out.put(k, v.sum()));
+        return out;
+    }
+}

@@ -1,0 +1,26 @@
+# ZimbriMetrics — Prometheus exporter for Paper. No runtime dependencies.
+
+# Value of the `server` label on every metric. Keep this equal to the Loki `host`
+# label so metrics and logs line up when correlating in Grafana.
+server-id: "mcbox"
+
+# Loopback only: Alloy runs on this host and scrapes locally, so there is no reason
+# to expose this on the LAN. Change only if something off-box must scrape it.
+bind-address: "127.0.0.1"
+port: 9101
+path: "/metrics"
+
+# How often to sample on the main thread. 100 ticks = 5s.
+# Every reading here is O(1) — Paper keeps entity/chunk/tile counts as counters — so
+# this is cheap, but sampling faster than Prometheus scrapes buys nothing.
+collection-interval-ticks: 100
+
+# Per-world entity / tile-entity / chunk / player series.
+per-world: true
+
+entity-types:
+  # Entities broken down by type, e.g. mc_world_entities_by_type{type="zombie"}.
+  # This is the ONLY reading that iterates entities rather than reading a counter,
+  # so it runs on its own slower cadence. Turn it off if entity counts get extreme.
+  enabled: true
+  interval-ticks: 600

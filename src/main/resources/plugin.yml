@@ -1,0 +1,17 @@
+name: ZimbriMetrics
+version: ${project.version}
+main: cc.zimbri.metrics.ZimbriMetrics
+api-version: "26.2"
+load: POSTWORLD
+description: Prometheus exporter for Paper. No runtime dependencies.
+author: gabe
+commands:
+  zmetrics:
+    description: Show ZimbriMetrics status or reload its config
+    aliases: [zm]
+    usage: /zmetrics <status|reload>
+    permission: zimbrimetrics.admin
+permissions:
+  zimbrimetrics.admin:
+    description: Use /zmetrics
+    default: op
