@@ -4,9 +4,13 @@
 # label so metrics and logs line up when correlating in Grafana.
 server-id: "mcbox"
 
-# Loopback only: Alloy runs on this host and scrapes locally, so there is no reason
-# to expose this on the LAN. Change only if something off-box must scrape it.
-bind-address: "127.0.0.1"
+# IMPORTANT when running in Docker: bind 0.0.0.0 here, NOT 127.0.0.1.
+# Docker's port publishing connects to the container's IP, not its loopback, so
+# binding to 127.0.0.1 inside the container makes the port unreachable even with
+# a -p mapping. Keep the exposure limit on the publish side instead, e.g.
+#   ports: ["127.0.0.1:9101:9101"]
+# which is what actually restricts this to the host's loopback.
+bind-address: "0.0.0.0"
 port: 9101
 path: "/metrics"
 
