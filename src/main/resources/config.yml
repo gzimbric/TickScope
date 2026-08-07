@@ -1,4 +1,4 @@
-# ZimbriMetrics — Prometheus exporter for Paper. No runtime dependencies.
+# TickScope — Prometheus exporter for Paper. No runtime dependencies.
 
 # Value of the `server` label on every metric. Keep this equal to the Loki `host`
 # label so metrics and logs line up when correlating in Grafana.

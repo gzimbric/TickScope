@@ -1,7 +1,7 @@
-# ZimbriMetrics — Minecraft server monitoring for Prometheus and Grafana
+# TickScope — Minecraft server monitoring for Prometheus and Grafana
 
-[![latest release](https://img.shields.io/github/v/release/gzimbric/ZimbriMetrics?label=download&color=brightgreen)](https://github.com/gzimbric/ZimbriMetrics/releases/latest)
-[![build](https://github.com/gzimbric/ZimbriMetrics/actions/workflows/build.yml/badge.svg)](https://github.com/gzimbric/ZimbriMetrics/actions/workflows/build.yml)
+[![latest release](https://img.shields.io/github/v/release/gzimbric/TickScope?label=download&color=brightgreen)](https://github.com/gzimbric/TickScope/releases/latest)
+[![build](https://github.com/gzimbric/TickScope/actions/workflows/build.yml/badge.svg)](https://github.com/gzimbric/TickScope/actions/workflows/build.yml)
 [![licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue.svg)](LICENSE)
 [![Paper 26.2+](https://img.shields.io/badge/Paper-26.2%2B-orange.svg)](https://papermc.io)
 [![Java 25+](https://img.shields.io/badge/Java-25%2B-red.svg)](https://adoptium.net)
@@ -31,13 +31,13 @@ unmaintained or far heavier than the job requires:
 | [minecraft-prometheus-exporter](https://github.com/sladkoff/minecraft-prometheus-exporter) | Feb 2025 | pre-26.x | 1.6 MB |
 | [UnifiedMetrics](https://github.com/Cubxity/UnifiedMetrics) | Apr 2023 | pre-26.x | 6 MB |
 | [mineGrafana](https://github.com/seraphicness/mineGrafana) | Apr 2026 | declares 1.21 | 50 MB |
-| **ZimbriMetrics** | — | **26.2** | **28 KB** |
+| **TickScope** | — | **26.2** | **28 KB** |
 
 mineGrafana does work on 26.2 despite its declared version, but it runs a full Spring Boot reactive
 stack — plus Hibernate, HikariCP, three JDBC drivers and async-profiler — inside your game server
 process, and keeps initialising for roughly twenty seconds after the server reports ready.
 
-ZimbriMetrics bundles nothing. The HTTP server is the JDK's own `com.sun.net.httpserver`, and the
+TickScope bundles nothing. The HTTP server is the JDK's own `com.sun.net.httpserver`, and the
 Prometheus text format is written directly, so there is no metrics library either. The published jar
 contains its own classes and two YAML files, and nothing else.
 
@@ -51,10 +51,10 @@ per-world counters, which is precisely what keeps it cheap.
 
 ## Installing
 
-**[⬇ Download the latest release](https://github.com/gzimbric/ZimbriMetrics/releases/latest)** —
+**[⬇ Download the latest release](https://github.com/gzimbric/TickScope/releases/latest)** —
 current version **v1.0.0**, a single 28 KB jar with nothing to install alongside it.
 
-1. Drop `ZimbriMetrics-1.0.0.jar` into your server's `plugins/` folder.
+1. Drop `TickScope-1.1.0.jar` into your server's `plugins/` folder.
 2. Start the server. It serves `http://127.0.0.1:9101/metrics` immediately, no configuration needed.
 3. Point Prometheus at it.
 
@@ -103,7 +103,7 @@ That is what actually limits the endpoint to the host.
 
 ## Configuration
 
-`plugins/ZimbriMetrics/config.yml`:
+`plugins/TickScope/config.yml`:
 
 ```yaml
 server-id: "mcbox"          # value of the `server` label on every metric
@@ -127,8 +127,8 @@ Loki, matching it to the Loki `host` label lets you correlate metrics and logs o
 
 | Command | Permission | Description |
 |---|---|---|
-| `/zmetrics status` | `zimbrimetrics.admin` | Current tick, player and collection figures |
-| `/zmetrics reload` | `zimbrimetrics.admin` | Re-read config and rebind the HTTP server |
+| `/tickscope status` | `tickscope.admin` | Current tick, player and collection figures |
+| `/tickscope reload` | `tickscope.admin` | Re-read config and rebind the HTTP server |
 
 Aliased to `/zm`. Both work from the console and over RCON.
 
@@ -263,7 +263,7 @@ loopback or behind a firewall.
 ## Building
 
 You do not need to build anything — prebuilt jars are attached to every
-[release](https://github.com/gzimbric/ZimbriMetrics/releases). To build it yourself:
+[release](https://github.com/gzimbric/TickScope/releases). To build it yourself:
 
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
@@ -273,13 +273,13 @@ mvn clean package
 The jar lands in `target/`. `paper-api` is a `provided` dependency and is never bundled. JDK 25 is
 required: paper-api 26.2 ships Java 25 class files, and an older JDK fails with *class file has
 wrong version*. Every push is built the same way by
-[CI](https://github.com/gzimbric/ZimbriMetrics/actions), so the released jar is reproducible.
+[CI](https://github.com/gzimbric/TickScope/actions), so the released jar is reproducible.
 
 ## Releases
 
 | Version | Paper | Notes |
 |---|---|---|
-| [v1.0.0](https://github.com/gzimbric/ZimbriMetrics/releases/tag/v1.0.0) | 26.2+ | First release |
+| [v1.0.0](https://github.com/gzimbric/TickScope/releases/tag/v1.0.0) | 26.2+ | First release |
 
 ## Licence
 

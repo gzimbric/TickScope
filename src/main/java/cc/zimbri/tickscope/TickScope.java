@@ -1,5 +1,5 @@
 /*
- * ZimbriMetrics - a Prometheus exporter for Paper servers.
+ * TickScope - a Prometheus exporter for Paper servers.
  * Copyright (C) 2026 Gabe Zimbric
  *
  * This program is free software: you can redistribute it and/or modify
@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package cc.zimbri.metrics;
+package cc.zimbri.tickscope;
 
 import com.sun.net.httpserver.HttpServer;
 import org.bukkit.command.Command;
@@ -38,7 +38,7 @@ import java.util.concurrent.Executors;
  * main thread. The HTTP handler only serialises the most recent published snapshot, so a
  * scrape can never block or race the server thread.
  */
-public final class ZimbriMetrics extends JavaPlugin {
+public final class TickScope extends JavaPlugin {
 
     private static final String CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
 
@@ -87,7 +87,7 @@ public final class ZimbriMetrics extends JavaPlugin {
             // One daemon thread on purpose: scrapes are cheap string building, and a pool
             // here would only compete with the server for CPU.
             http.setExecutor(Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "ZimbriMetrics-http");
+                Thread t = new Thread(r, "TickScope-http");
                 t.setDaemon(true);
                 return t;
             }));
@@ -113,7 +113,7 @@ public final class ZimbriMetrics extends JavaPlugin {
         switch (sub) {
             case "status" -> {
                 Snapshot s = latest;
-                sender.sendMessage("ZimbriMetrics " + getPluginMeta().getVersion());
+                sender.sendMessage("TickScope " + getPluginMeta().getVersion());
                 for (Map.Entry<String, String> e : collector.describe().entrySet()) {
                     sender.sendMessage("  " + e.getKey() + ": " + e.getValue());
                 }
@@ -126,7 +126,7 @@ public final class ZimbriMetrics extends JavaPlugin {
                         s.collectionSeconds() * 1000));
             }
             case "reload" -> {
-                sender.sendMessage("Reloading ZimbriMetrics…");
+                sender.sendMessage("Reloading TickScope…");
                 onDisable();
                 reloadConfig();
                 onEnable();

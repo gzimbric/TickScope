@@ -5,12 +5,12 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>cc.zimbri</groupId>
-  <artifactId>zimbri-metrics</artifactId>
-  <version>1.0.0</version>
+  <artifactId>tickscope</artifactId>
+  <version>1.1.0</version>
   <packaging>jar</packaging>
-  <name>ZimbriMetrics</name>
+  <name>TickScope</name>
   <description>Prometheus exporter for Paper. No runtime dependencies.</description>
-  <url>https://github.com/gzimbric/ZimbriMetrics</url>
+  <url>https://github.com/gzimbric/TickScope</url>
 
   <licenses>
     <license>
@@ -29,8 +29,8 @@
   </developers>
 
   <scm>
-    <url>https://github.com/gzimbric/ZimbriMetrics</url>
-    <connection>scm:git:https://github.com/gzimbric/ZimbriMetrics.git</connection>
+    <url>https://github.com/gzimbric/TickScope</url>
+    <connection>scm:git:https://github.com/gzimbric/TickScope.git</connection>
   </scm>
 
   <properties>
@@ -58,7 +58,7 @@
   </dependencies>
 
   <build>
-    <finalName>ZimbriMetrics-${project.version}</finalName>
+    <finalName>TickScope-${project.version}</finalName>
     <resources>
       <resource>
         <directory>src/main/resources</directory>

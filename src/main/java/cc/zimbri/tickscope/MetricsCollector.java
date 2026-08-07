@@ -1,5 +1,5 @@
 /*
- * ZimbriMetrics - a Prometheus exporter for Paper servers.
+ * TickScope - a Prometheus exporter for Paper servers.
  * Copyright (C) 2026 Gabe Zimbric
  *
  * This program is free software: you can redistribute it and/or modify
@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-package cc.zimbri.metrics;
+package cc.zimbri.tickscope;
 
 import com.sun.management.OperatingSystemMXBean;
 import org.bukkit.Bukkit;

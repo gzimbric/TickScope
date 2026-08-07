@@ -24,6 +24,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ZimbriMetrics
-          path: target/ZimbriMetrics-*.jar
+          name: TickScope
+          path: target/TickScope-*.jar
           if-no-files-found: error

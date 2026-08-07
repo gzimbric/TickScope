@@ -1,17 +1,17 @@
-name: ZimbriMetrics
+name: TickScope
 version: ${project.version}
-main: cc.zimbri.metrics.ZimbriMetrics
+main: cc.zimbri.tickscope.TickScope
 api-version: "26.2"
 load: POSTWORLD
-description: Prometheus exporter for Paper. No runtime dependencies.
-author: gabe
+description: Prometheus metrics exporter for Paper - TPS, MSPT, entities, chunks, JVM. No runtime dependencies.
+author: Gabe Zimbric
 commands:
-  zmetrics:
-    description: Show ZimbriMetrics status or reload its config
-    aliases: [zm]
-    usage: /zmetrics <status|reload>
-    permission: zimbrimetrics.admin
+  tickscope:
+    description: Show TickScope status or reload its config
+    aliases: [ts]
+    usage: /tickscope <status|reload>
+    permission: tickscope.admin
 permissions:
-  zimbrimetrics.admin:
-    description: Use /zmetrics
+  tickscope.admin:
+    description: Use /tickscope
     default: op
