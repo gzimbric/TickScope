@@ -1,0 +1,49 @@
+name: link-check
+
+on:
+  schedule:
+    - cron: "0 7 * * 1"    # Mondays, 07:00 UTC
+  pull_request:
+    paths:
+      - "**.md"
+      - ".github/**"
+      - "src/main/resources/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write            # only used to report rot from the scheduled run
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check links
+        id: check
+        run: |
+          set -o pipefail
+          bash .github/scripts/check-links.sh 2>&1 | tee /tmp/links.log
+
+      # A scheduled run nobody watches is useless if it only turns the tab red,
+      # so failures during the weekly sweep open an issue instead.
+      - name: Report rotted links
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          broken=$(grep '^  BROKEN' /tmp/links.log || true)
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+                       --label link-rot --state open --limit 1 --json number --jq '.[0].number')
+          body=$(printf 'The weekly link check found URLs that no longer resolve.\n\n```\n%s\n```\n\n[Run](%s/%s/actions/runs/%s)\n' \
+                   "$broken" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
+          else
+            gh label create link-rot --color fbca04 --description "A published link stopped resolving" \
+              --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "Broken links found by the weekly check" \
+              --label link-rot --body "$body"
+          fi

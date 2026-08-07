@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Check that every URL published by this repo still resolves.
+#
+# Some URLs are supposed to be unreachable and are skipped rather than reported:
+#   - 127.0.0.1 / localhost   the endpoint on the reader's own server
+#   - maven.apache.org/POM    an XML namespace identifier, not a link
+#   - www.w3.org/             ditto
+#   - *.example               RFC 2606 reserves this for documentation
+#
+# Runs in CI weekly, and by hand: bash .github/scripts/check-links.sh
+set -uo pipefail
+
+SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|\.example([:/]|$)'
+
+mapfile -t URLS < <(
+  grep -rhoE 'https?://[^)"'"'"' <>]+' \
+       README.md pom.xml .github src/main/resources src/main/java 2>/dev/null \
+  | sed -e 's/[].,;:)`]*$//' -e 's/\\$//' \
+  | grep -vE "$SKIP" \
+  | sort -u
+)
+
+echo "Checking ${#URLS[@]} URLs"
+echo
+
+fail=0
+for u in "${URLS[@]}"; do
+  # Retry: shields.io and GitHub occasionally rate-limit a burst of requests,
+  # and a 429 is not a rotted link.
+  code=$(curl -sSL -o /dev/null -w '%{http_code}' \
+              --max-time 25 --retry 3 --retry-delay 5 --retry-all-errors \
+              -A 'TickScope-link-check' "$u" 2>/dev/null || echo 000)
+  case "$code" in
+    200|301|302|204) printf '  ok    %-4s %s\n' "$code" "$u" ;;
+    *)               printf '  BROKEN %-4s %s\n' "$code" "$u"; fail=1 ;;
+  esac
+done
+
+echo
+if [ "$fail" -ne 0 ]; then
+  echo "One or more links are broken."
+else
+  echo "All links resolve."
+fi
+exit "$fail"
