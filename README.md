@@ -288,6 +288,20 @@ wrong version*. Every push is built the same way by
 |---|---|---|
 | [v1.0.0](https://github.com/gzimbric/TickScope/releases/tag/v1.0.0) | 26.2+ | First release |
 
+## Feedback and issues
+
+- **Something broken?** [Open a bug report](https://github.com/gzimbric/TickScope/issues/new?template=bug_report.yml).
+  The form asks for your Paper, Java and TickScope versions up front, because those
+  three resolve most reports on their own.
+- **Want a metric that isn't there?** [Open a feature request](https://github.com/gzimbric/TickScope/issues/new?template=feature_request.yml).
+  Say what you're trying to diagnose rather than just naming the metric — that usually
+  leads to a better answer, and sometimes it turns out to be possible already.
+- **Not sure which it is?** [Ask in Discussions](https://github.com/gzimbric/TickScope/discussions).
+  Scrape configs, PromQL, and "is this number normal?" all belong there.
+
+Bug reports about Spigot, Bukkit or Folia will be closed — see
+[Requirements](#requirements) for why those cannot work.
+
 ## Licence
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).

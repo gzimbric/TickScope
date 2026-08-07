@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or setup help
+    url: https://github.com/gzimbric/TickScope/discussions
+    about: >
+      Not sure whether something is a bug? Ask here first — scrape configs,
+      Grafana queries and "is this normal?" questions are all welcome.
+  - name: Documentation
+    url: https://github.com/gzimbric/TickScope#readme
+    about: >
+      Installation, the full metrics reference, the Docker bind-address gotcha,
+      and an FAQ covering TPS versus MSPT.
+  - name: Modrinth page
+    url: https://modrinth.com/plugin/tickscope
+    about: Downloads, changelogs and version compatibility.

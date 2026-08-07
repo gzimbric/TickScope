@@ -1,0 +1,97 @@
+name: Bug report
+description: Something is broken, wrong, or behaving unexpectedly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The version fields below are the
+        ones that resolve most issues on their own, so please fill them in even if
+        they seem unrelated.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+      placeholder: The /metrics endpoint returns 404 instead of the metrics text.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Install TickScope 1.1.0 on a fresh Paper 26.2 server
+        2. Start the server
+        3. curl http://127.0.0.1:9101/metrics
+    validations:
+      required: true
+
+  - type: input
+    id: tickscope-version
+    attributes:
+      label: TickScope version
+      description: From `/tickscope status` or the jar filename.
+      placeholder: "1.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Server version
+      description: The full output of `/version`.
+      placeholder: "Paper 26.2-100-main@714512e"
+    validations:
+      required: true
+
+  - type: input
+    id: java-version
+    attributes:
+      label: Java version
+      description: From `java -version`. TickScope requires Java 25 or newer.
+      placeholder: "25.0.3 Temurin"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: How is the server running?
+      description: Docker changes how the bind address behaves, so this matters.
+      options:
+        - Bare metal or VM
+        - Docker
+        - Kubernetes
+        - Managed host / game panel
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Your config.yml
+      description: From `plugins/TickScope/config.yml`. Redact anything you consider sensitive.
+      render: yaml
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: >
+        Any lines mentioning TickScope from startup onward, plus a stack trace if
+        there is one. This is rendered as code, so no backticks needed.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I am running Paper (or a Paper fork). Spigot, Bukkit and Folia are not supported.
+          required: true
+        - label: I searched existing issues and this has not already been reported.
+          required: true

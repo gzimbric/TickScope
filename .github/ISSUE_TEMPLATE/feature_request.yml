@@ -1,0 +1,62 @@
+name: Feature request
+description: Suggest a new metric, option, or capability
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TickScope deliberately stays small — no dependencies, no profiler, nothing
+        shaded. Suggestions that fit inside that constraint are the easiest to say
+        yes to, so it helps to mention what a metric would let you diagnose.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: What are you trying to find out about your server that you currently cannot?
+      placeholder: >
+        I cannot tell whether tick time is going into entities or into chunk loading,
+        so I do not know which one to tune.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like it to do?
+      description: If you are proposing a metric, a suggested name and labels helps.
+      placeholder: 'A gauge like mc_world_chunk_loads_total{world} would separate the two.'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of change is this?
+      options:
+        - A new metric
+        - A new config option
+        - A change to an existing metric
+        - A command or permission change
+        - Documentation
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Anything you have tried already
+      description: >
+        Existing metrics you have combined, PromQL you have written, or another
+        plugin you used. Sometimes this is already possible and the docs are at fault.
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Scope
+      options:
+        - label: >
+            I understand TickScope has no runtime dependencies, and that a request
+            requiring a large library may be declined on those grounds.
+          required: true
