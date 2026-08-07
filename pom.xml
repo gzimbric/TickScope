@@ -10,6 +10,28 @@
   <packaging>jar</packaging>
   <name>ZimbriMetrics</name>
   <description>Prometheus exporter for Paper. No runtime dependencies.</description>
+  <url>https://github.com/gzimbric/ZimbriMetrics</url>
+
+  <licenses>
+    <license>
+      <name>GNU General Public License v3.0 or later</name>
+      <url>https://www.gnu.org/licenses/gpl-3.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>gzimbric</id>
+      <name>Gabe Zimbric</name>
+      <url>https://github.com/gzimbric</url>
+    </developer>
+  </developers>
+
+  <scm>
+    <url>https://github.com/gzimbric/ZimbriMetrics</url>
+    <connection>scm:git:https://github.com/gzimbric/ZimbriMetrics.git</connection>
+  </scm>
 
   <properties>
     <maven.compiler.release>25</maven.compiler.release>

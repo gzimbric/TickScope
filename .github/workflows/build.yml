@@ -1,0 +1,29 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # paper-api 26.2 ships Java 25 class files (major 69), so an older JDK
+      # fails with "class file has wrong version".
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "25"
+          distribution: temurin
+          cache: maven
+
+      - run: mvn -B clean package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZimbriMetrics
+          path: target/ZimbriMetrics-*.jar
+          if-no-files-found: error
