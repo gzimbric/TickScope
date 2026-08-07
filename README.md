@@ -25,23 +25,14 @@ mc_world_entities_by_type{world="world",type="chicken"} 35
 
 ## Why this exists
 
-Every existing option for getting Minecraft server metrics into Prometheus and Grafana is either
-unmaintained or far heavier than the job requires:
+Getting Minecraft server metrics into Grafana usually means running a monitoring framework inside
+your game server. TickScope takes the opposite approach: read what Paper already tracks, write it
+out in Prometheus' text format, and add nothing else.
 
-| | Latest release | Newest MC supported | Jar |
-|---|---|---|---|
-| [minecraft-prometheus-exporter](https://github.com/sladkoff/minecraft-prometheus-exporter) | Feb 2025 | pre-26.x | 4.6 MB |
-| [UnifiedMetrics](https://github.com/Cubxity/UnifiedMetrics) | Apr 2023 | pre-26.x | 10.2 MB |
-| [mineGrafana](https://github.com/seraphicness/mineGrafana) | Apr 2026 | declares 1.21 | 50.7 MB |
-| **TickScope** | — | **26.2** | **28 KB** |
-
-Jar sizes are the latest release asset from each project. mineGrafana does work on 26.2 despite its declared version, but it runs a full Spring Boot reactive
-stack — plus Hibernate, HikariCP, three JDBC drivers and async-profiler — inside your game server
-process, and keeps initialising for roughly twenty seconds after the server reports ready.
-
-TickScope bundles nothing. The HTTP server is the JDK's own `com.sun.net.httpserver`, and the
-Prometheus text format is written directly, so there is no metrics library either. The published jar
-contains its own classes and two YAML files, and nothing else.
+There is no metrics library, because the exposition format is a few lines of string building. There
+is no embedded web framework, because the JDK already ships an HTTP server. Nothing is shaded, so
+the published jar contains its own classes and two YAML files and that is all — 28 KB, and no new
+entries in your dependency tree.
 
 ## Requirements
 
@@ -310,7 +301,7 @@ No code from any other project is included here. Two are worth naming anyway:
 
 - [UnifiedMetrics](https://github.com/Cubxity/UnifiedMetrics) (LGPL-3.0) — its collectors were read
   to decide *which* JVM, process and event metrics were worth covering.
-- [mineGrafana](https://github.com/seraphicness/mineGrafana) (MIT) — the prior art this replaced.
+- [mineGrafana](https://github.com/seraphicness/mineGrafana) (MIT) — prior art in this space.
 
 Metric naming follows the conventions established by Prometheus'
 [client_java](https://github.com/prometheus/client_java), which is also where UnifiedMetrics' names
