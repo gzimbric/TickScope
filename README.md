@@ -46,9 +46,9 @@ the [FAQ](#faq).
 ## Installing
 
 **[⬇ Download the latest release](https://github.com/gzimbric/TickScope/releases/latest)** —
-current version **v1.0.0**, a single 28 KB jar with nothing to install alongside it.
+current version **v1.1.0**, a single 28 KB jar with nothing to install alongside it.
 
-1. Drop `TickScope-1.1.0.jar` into your server's `plugins/` folder.
+1. Drop the downloaded `TickScope-*.jar` into your server's `plugins/` folder.
 2. Start the server. It serves `http://127.0.0.1:9101/metrics` immediately, no configuration needed.
 3. Point Prometheus at it.
 
@@ -302,7 +302,7 @@ wrong version*. Every push is built the same way by
 
 | Version | Paper | Notes |
 |---|---|---|
-| [v1.0.0](https://github.com/gzimbric/TickScope/releases/tag/v1.0.0) | 26.2+ | First release |
+| [v1.1.0](https://github.com/gzimbric/TickScope/releases/tag/v1.1.0) | 26.2+ | First public release |
 
 ## Feedback and issues
 
