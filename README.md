@@ -1,27 +1,36 @@
-# ZimbriMetrics
+# ZimbriMetrics — Minecraft server monitoring for Prometheus and Grafana
 
-A Prometheus exporter for [Paper](https://papermc.io) servers, in a **27 KB jar with zero runtime dependencies**.
+[![build](https://github.com/gzimbric/ZimbriMetrics/actions/workflows/build.yml/badge.svg)](https://github.com/gzimbric/ZimbriMetrics/actions/workflows/build.yml)
+[![licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue.svg)](LICENSE)
+[![Paper 26.2+](https://img.shields.io/badge/Paper-26.2%2B-orange.svg)](https://papermc.io)
+[![Java 25+](https://img.shields.io/badge/Java-25%2B-red.svg)](https://adoptium.net)
 
-It exposes tick timing, per-world entity and chunk counts, JVM internals, process CPU and player
-event counters on a plain HTTP endpoint, ready to be scraped into Prometheus and graphed in Grafana.
+A lightweight **Prometheus exporter plugin for Minecraft [Paper](https://papermc.io) servers** — a
+28 KB jar with **zero runtime dependencies**.
+
+Monitor your Minecraft server's **TPS, MSPT tick lag, entity counts, chunk loading, RAM, CPU and
+player activity**, and graph it all in **Grafana** — without running a heavyweight monitoring stack
+inside your game server.
 
 ```
 mc_mspt_ms{quantile="p99"} 21.6336
+mc_tps{window="1m"} 20.0
+mc_players_online 4
 mc_world_entities{world="world"} 226
 mc_world_entities_by_type{world="world",type="chicken"} 35
 ```
 
 ## Why this exists
 
-Every existing option for getting Paper metrics into Grafana is either unmaintained or far heavier
-than the job requires:
+Every existing option for getting Minecraft server metrics into Prometheus and Grafana is either
+unmaintained or far heavier than the job requires:
 
 | | Latest release | Newest MC supported | Jar |
 |---|---|---|---|
 | [minecraft-prometheus-exporter](https://github.com/sladkoff/minecraft-prometheus-exporter) | Feb 2025 | pre-26.x | 1.6 MB |
 | [UnifiedMetrics](https://github.com/Cubxity/UnifiedMetrics) | Apr 2023 | pre-26.x | 6 MB |
 | [mineGrafana](https://github.com/seraphicness/mineGrafana) | Apr 2026 | declares 1.21 | 50 MB |
-| **ZimbriMetrics** | — | **26.2** | **27 KB** |
+| **ZimbriMetrics** | — | **26.2** | **28 KB** |
 
 mineGrafana does work on 26.2 despite its declared version, but it runs a full Spring Boot reactive
 stack — plus Hibernate, HikariCP, three JDBC drivers and async-profiler — inside your game server
@@ -207,6 +216,45 @@ There is no per-plugin CPU attribution, because doing it properly needs a sampli
 is most of why the alternatives are so large. Paper already bundles
 [spark](https://spark.lucko.me/), which profiles better than a background sampler could, on demand
 rather than continuously.
+
+## FAQ
+
+**How do I monitor a Minecraft server with Grafana?**
+Install this plugin, point Prometheus at `http://<server>:9101/metrics`, add Prometheus as a Grafana
+data source, and build panels on the metrics listed above. The [Installing](#installing) section has
+a working scrape config. If your server is at home behind NAT and Grafana lives on a VPS, use the
+Grafana Alloy example — it scrapes locally and pushes outward, so nothing needs a port forward.
+
+**My Minecraft server is lagging. How do I find out why?**
+Watch `mc_mspt_ms` rather than TPS. A p50 well below the mean with a high p99 means the server is
+idle most ticks and stalling occasionally — chase the stall, not the average. From there,
+`mc_world_entities_by_type` shows whether a mob or item build-up is responsible, `mc_world_chunks`
+shows chunk-loading pressure from players exploring, and `mc_jvm_gc_seconds_total` shows whether
+garbage collection is eating the tick budget.
+
+**What is the difference between TPS and MSPT?**
+TPS counts ticks per second and is capped at 20, so a healthy server and a server with 60% headroom
+both read exactly 20.0. MSPT measures how long each tick actually took, against a 50 ms budget. MSPT
+degrades visibly long before TPS moves, which makes it the earlier warning.
+
+**Does it work on Spigot, Bukkit, Purpur or Folia?**
+Paper and Paper forks only. The exporter depends on Paper's `getTickTimes()` and its O(1) per-world
+counters — the very things that keep it cheap. Purpur and other Paper forks should work; plain
+Spigot and Bukkit will not.
+
+**Does it work with Velocity or BungeeCord?**
+No. This is a backend server plugin. Run it on each Paper instance and distinguish them with
+`server-id`.
+
+**Will it slow my server down?**
+Sampling costs roughly 2–3 ms every five seconds, and the plugin reports its own cost as
+`mc_collection_duration_seconds` so you can confirm rather than trust. Scrapes never touch the
+server thread at all — see [Design](#design).
+
+**Do I need Prometheus, or can I use something else?**
+Any scraper that speaks the Prometheus text format works, including Grafana Alloy, VictoriaMetrics
+and OpenTelemetry Collector. The endpoint is plain HTTP with no authentication, so keep it bound to
+loopback or behind a firewall.
 
 ## Building
 
