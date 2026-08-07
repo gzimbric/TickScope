@@ -1,5 +1,6 @@
 # ZimbriMetrics — Minecraft server monitoring for Prometheus and Grafana
 
+[![latest release](https://img.shields.io/github/v/release/gzimbric/ZimbriMetrics?label=download&color=brightgreen)](https://github.com/gzimbric/ZimbriMetrics/releases/latest)
 [![build](https://github.com/gzimbric/ZimbriMetrics/actions/workflows/build.yml/badge.svg)](https://github.com/gzimbric/ZimbriMetrics/actions/workflows/build.yml)
 [![licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue.svg)](LICENSE)
 [![Paper 26.2+](https://img.shields.io/badge/Paper-26.2%2B-orange.svg)](https://papermc.io)
@@ -50,8 +51,11 @@ per-world counters, which is precisely what keeps it cheap.
 
 ## Installing
 
-1. Drop `ZimbriMetrics-1.0.0.jar` into `plugins/`.
-2. Start the server. It serves `http://127.0.0.1:9101/metrics` immediately.
+**[⬇ Download the latest release](https://github.com/gzimbric/ZimbriMetrics/releases/latest)** —
+current version **v1.0.0**, a single 28 KB jar with nothing to install alongside it.
+
+1. Drop `ZimbriMetrics-1.0.0.jar` into your server's `plugins/` folder.
+2. Start the server. It serves `http://127.0.0.1:9101/metrics` immediately, no configuration needed.
 3. Point Prometheus at it.
 
 ```yaml
@@ -258,12 +262,24 @@ loopback or behind a firewall.
 
 ## Building
 
+You do not need to build anything — prebuilt jars are attached to every
+[release](https://github.com/gzimbric/ZimbriMetrics/releases). To build it yourself:
+
 ```bash
 export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
 mvn clean package
 ```
 
-The jar lands in `target/`. `paper-api` is a `provided` dependency and is never bundled.
+The jar lands in `target/`. `paper-api` is a `provided` dependency and is never bundled. JDK 25 is
+required: paper-api 26.2 ships Java 25 class files, and an older JDK fails with *class file has
+wrong version*. Every push is built the same way by
+[CI](https://github.com/gzimbric/ZimbriMetrics/actions), so the released jar is reproducible.
+
+## Releases
+
+| Version | Paper | Notes |
+|---|---|---|
+| [v1.0.0](https://github.com/gzimbric/ZimbriMetrics/releases/tag/v1.0.0) | 26.2+ | First release |
 
 ## Licence
 
