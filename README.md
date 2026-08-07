@@ -30,12 +30,12 @@ unmaintained or far heavier than the job requires:
 
 | | Latest release | Newest MC supported | Jar |
 |---|---|---|---|
-| [minecraft-prometheus-exporter](https://github.com/sladkoff/minecraft-prometheus-exporter) | Feb 2025 | pre-26.x | 1.6 MB |
-| [UnifiedMetrics](https://github.com/Cubxity/UnifiedMetrics) | Apr 2023 | pre-26.x | 6 MB |
-| [mineGrafana](https://github.com/seraphicness/mineGrafana) | Apr 2026 | declares 1.21 | 50 MB |
+| [minecraft-prometheus-exporter](https://github.com/sladkoff/minecraft-prometheus-exporter) | Feb 2025 | pre-26.x | 4.6 MB |
+| [UnifiedMetrics](https://github.com/Cubxity/UnifiedMetrics) | Apr 2023 | pre-26.x | 10.2 MB |
+| [mineGrafana](https://github.com/seraphicness/mineGrafana) | Apr 2026 | declares 1.21 | 50.7 MB |
 | **TickScope** | — | **26.2** | **28 KB** |
 
-mineGrafana does work on 26.2 despite its declared version, but it runs a full Spring Boot reactive
+Jar sizes are the latest release asset from each project. mineGrafana does work on 26.2 despite its declared version, but it runs a full Spring Boot reactive
 stack — plus Hibernate, HikariCP, three JDBC drivers and async-profiler — inside your game server
 process, and keeps initialising for roughly twenty seconds after the server reports ready.
 
@@ -49,7 +49,8 @@ contains its own classes and two YAML files, and nothing else.
 - Java **25** or newer
 
 Spigot and Bukkit are not supported: the exporter relies on Paper's `getTickTimes()` and its O(1)
-per-world counters, which is precisely what keeps it cheap.
+per-world counters, which is precisely what keeps it cheap. Purpur works. **Folia does not** — see
+the [FAQ](#faq).
 
 ## Installing
 
@@ -244,9 +245,12 @@ both read exactly 20.0. MSPT measures how long each tick actually took, against 
 degrades visibly long before TPS moves, which makes it the earlier warning.
 
 **Does it work on Spigot, Bukkit, Purpur or Folia?**
-Paper and Paper forks only. The exporter depends on Paper's `getTickTimes()` and its O(1) per-world
-counters — the very things that keep it cheap. Purpur and other Paper forks should work; plain
-Spigot and Bukkit will not.
+Paper and Purpur, yes. Spigot and Bukkit, no — the exporter depends on Paper's `getTickTimes()`
+and its O(1) per-world counters, which is exactly what keeps it cheap.
+
+**Folia is not supported.** Sampling runs on the Bukkit scheduler, which Folia replaces with
+regional schedulers, and the plugin does not declare `folia-supported`, so Folia will refuse to
+load it rather than misbehave.
 
 **Does it work with Velocity or BungeeCord?**
 No. This is a backend server plugin. Run it on each Paper instance and distinguish them with
@@ -261,6 +265,16 @@ server thread at all — see [Design](#design).
 Any scraper that speaks the Prometheus text format works, including Grafana Alloy, VictoriaMetrics
 and OpenTelemetry Collector. The endpoint is plain HTTP with no authentication, so keep it bound to
 loopback or behind a firewall.
+
+## Privacy
+
+TickScope makes **no outbound network connections of any kind**. There is no telemetry, no bStats,
+no update check, and nothing is sent anywhere. The plugin only *listens* on the port you configure;
+your metrics go exactly where you point your own scraper and nowhere else.
+
+The endpoint is unauthenticated by design, so keep it bound to loopback or behind a firewall — the
+data includes player names only in so far as ping aggregates, but chunk and entity counts still
+describe your server.
 
 ## Building
 
