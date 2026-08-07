@@ -1,3 +1,5 @@
+<img src="assets/icon.png" align="right" width="120" alt="TickScope icon">
+
 # TickScope — Minecraft server monitoring for Prometheus and Grafana
 
 [![latest release](https://img.shields.io/github/v/release/gzimbric/TickScope?label=download&color=brightgreen)](https://github.com/gzimbric/TickScope/releases/latest)
