@@ -162,6 +162,22 @@ signal, and the percentiles are exact rather than bucketed (see [Design](#design
 | `mc_world_players` | `world` | Players per world |
 | `mc_world_entities_by_type` | `world`, `type` | Entities broken down by type |
 
+**`mc_world_entities_by_type` only reports types that are loaded right now.** When the last
+zombie unloads, the series stops being emitted rather than dropping to `0`, so
+`mc_world_entities_by_type{type="zombie"}` returns *nothing* rather than a zero.
+
+That is deliberate — emitting a permanent zero for every entity type that has ever loaded would
+leave hundreds of dead series behind. But it does mean a panel can look broken when it is simply
+empty. Ask for an explicit zero if you want the line to stay put:
+
+```promql
+mc_world_entities_by_type{type="zombie"} or vector(0)
+```
+
+The same applies to `topk()` over this metric: it ranks what is loaded at that moment, so the set
+of series legitimately changes as the world does. The other `mc_world_*` metrics are not affected —
+worlds are always loaded, so those series are stable.
+
 ### JVM and process
 
 | Metric | Labels | Description |
