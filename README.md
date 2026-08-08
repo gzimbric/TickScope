@@ -110,6 +110,8 @@ bind-address: "0.0.0.0"
 port: 9101
 path: "/metrics"
 
+auth-token: ""              # empty = open; set it to require a bearer token
+
 collection-interval-ticks: 100   # 100 ticks = 5s
 
 per-world: true
@@ -121,6 +123,21 @@ entity-types:
 
 Set `server-id` to whatever identifies this server elsewhere in your stack. If you also ship logs to
 Loki, matching it to the Loki `host` label lets you correlate metrics and logs on one dashboard.
+
+Set `auth-token` to require `Authorization: Bearer <token>` on every scrape. Leave it empty when the
+endpoint is on loopback or behind a firewall; set it when the scrape has to cross a network you do
+not fully control. In Prometheus:
+
+```yaml
+scrape_configs:
+  - job_name: minecraft
+    authorization:
+      credentials: "your-token-here"
+    static_configs:
+      - targets: ["10.0.0.5:9101"]
+```
+
+Read the [Privacy](#privacy) section before exposing the endpoint — a token is not encryption.
 
 ## Commands
 
@@ -236,6 +253,11 @@ is most of why the alternatives are so large. Paper already bundles
 [spark](https://spark.lucko.me/), which profiles better than a background sampler could, on demand
 rather than continuously.
 
+There is no built-in TLS either. `HttpsServer` ships in the JDK, so it would cost no dependency — but
+it would cost keystore formats, certificate renewal and the support load that comes with both, all of
+which a reverse proxy in front already handles better. `auth-token` covers what TLS does not: keeping
+anonymous readers out. Use both if the endpoint leaves your network.
+
 ## FAQ
 
 **How do I monitor a Minecraft server with Grafana?**
@@ -284,9 +306,15 @@ TickScope makes **no outbound network connections of any kind**. There is no tel
 no update check, and nothing is sent anywhere. The plugin only *listens* on the port you configure;
 your metrics go exactly where you point your own scraper and nowhere else.
 
-The endpoint is unauthenticated by design, so keep it bound to loopback or behind a firewall — the
-data includes player names only in so far as ping aggregates, but chunk and entity counts still
-describe your server.
+The endpoint is **open by default**, so keep it bound to loopback or behind a firewall. The data
+carries player names only in so far as ping aggregates, but it does report when nobody is online and
+which world holds your entities and chunks — more than you may want a stranger able to poll.
+
+Setting `auth-token` requires `Authorization: Bearer <token>` on every scrape. The comparison is
+constant-time, so the token cannot be recovered by timing the response, and a refused scrape gets an
+empty body rather than anything describing the server. That stops anonymous reads — it is **not**
+confidentiality. The endpoint is plain HTTP and the token crosses the wire in the clear. If the
+scrape path leaves a network you control, terminate TLS at a reverse proxy in front of it.
 
 ## Building
 

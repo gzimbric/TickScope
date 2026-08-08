@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.Map;
 import java.util.concurrent.Executors;
 
@@ -41,12 +42,14 @@ import java.util.concurrent.Executors;
 public final class TickScope extends JavaPlugin {
 
     private static final String CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
+    private static final String BEARER = "Bearer ";
 
     private HttpServer http;
     private BukkitTask sampler;
     private BukkitTask entitySampler;
     private MetricsCollector collector;
     private volatile Snapshot latest;
+    private boolean authRequired;
 
     @Override
     public void onEnable() {
@@ -55,6 +58,8 @@ public final class TickScope extends JavaPlugin {
         String bind = getConfig().getString("bind-address", "127.0.0.1");
         int port = getConfig().getInt("port", 9101);
         String path = getConfig().getString("path", "/metrics");
+        String token = getConfig().getString("auth-token", "").trim();
+        authRequired = !token.isEmpty();
         long interval = Math.max(20L, getConfig().getLong("collection-interval-ticks", 100L));
         boolean perWorld = getConfig().getBoolean("per-world", true);
         boolean byType = getConfig().getBoolean("entity-types.enabled", true);
@@ -77,6 +82,12 @@ public final class TickScope extends JavaPlugin {
         try {
             http = HttpServer.create(new InetSocketAddress(bind, port), 0);
             http.createContext(path, exchange -> {
+                if (!authorised(token, exchange.getRequestHeaders().getFirst("Authorization"))) {
+                    exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer");
+                    exchange.sendResponseHeaders(401, -1);   // -1: no body, so a refused
+                    exchange.close();                        // scrape learns nothing at all
+                    return;
+                }
                 byte[] body = PrometheusWriter.render(latest).getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", CONTENT_TYPE);
                 exchange.sendResponseHeaders(200, body.length);
@@ -93,7 +104,8 @@ public final class TickScope extends JavaPlugin {
             }));
             http.start();
             getLogger().info("Serving " + path + " on " + bind + ":" + port
-                    + " as server=\"" + serverId + "\" (every " + interval + " ticks)");
+                    + " as server=\"" + serverId + "\" (every " + interval + " ticks, "
+                    + (token.isEmpty() ? "no auth)" : "auth required)"));
         } catch (IOException e) {
             getLogger().severe("Could not bind " + bind + ":" + port + " — " + e.getMessage());
             getServer().getPluginManager().disablePlugin(this);
@@ -107,6 +119,23 @@ public final class TickScope extends JavaPlugin {
         if (http != null) http.stop(0);
     }
 
+    /**
+     * Constant-time bearer check. String.equals returns as soon as two bytes differ, which hands
+     * the token back a byte at a time to anyone who can time the response; MessageDigest.isEqual
+     * compares the whole array regardless. An empty configured token disables auth entirely.
+     *
+     * <p>This stops unauthenticated reads. It is not confidentiality — the endpoint is plain HTTP
+     * and the token crosses the wire in the clear, so put a TLS-terminating proxy in front of it
+     * if the scrape path is not one you control.
+     */
+    private static boolean authorised(String token, String header) {
+        if (token.isEmpty()) return true;
+        if (header == null || !header.startsWith(BEARER)) return false;
+        return MessageDigest.isEqual(
+                header.substring(BEARER.length()).trim().getBytes(StandardCharsets.UTF_8),
+                token.getBytes(StandardCharsets.UTF_8));
+    }
+
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         String sub = args.length == 0 ? "status" : args[0].toLowerCase();
@@ -117,6 +146,8 @@ public final class TickScope extends JavaPlugin {
                 for (Map.Entry<String, String> e : collector.describe().entrySet()) {
                     sender.sendMessage("  " + e.getKey() + ": " + e.getValue());
                 }
+                // State only -- never the token itself.
+                sender.sendMessage("  auth: " + (authRequired ? "required" : "none"));
                 sender.sendMessage(String.format(
                         "  mspt avg %.2f  p95 %.2f  max %.2f  (%d samples)",
                         s.ticks().avgMs(), s.ticks().p95Ms(), s.ticks().maxMs(), s.ticks().samples()));

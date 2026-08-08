@@ -14,6 +14,15 @@ bind-address: "0.0.0.0"
 port: 9101
 path: "/metrics"
 
+# Require `Authorization: Bearer <token>` on every scrape. Empty means no auth, which is
+# fine when the endpoint is on loopback or behind a firewall. Set it when the scrape has to
+# cross a network you do not fully control: the metrics say when nobody is online and which
+# world holds your entities, which is more than you may want a stranger to be able to poll.
+# In Prometheus this is `authorization: { credentials: <token> }` on the scrape job.
+# NOTE this is plain HTTP -- the token is not encrypted in transit. It prevents anonymous
+# reads; for confidentiality put a TLS-terminating reverse proxy in front.
+auth-token: ""
+
 # How often to sample on the main thread. 100 ticks = 5s.
 # Every reading here is O(1) — Paper keeps entity/chunk/tile counts as counters — so
 # this is cheap, but sampling faster than Prometheus scrapes buys nothing.
