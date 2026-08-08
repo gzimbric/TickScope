@@ -9,7 +9,7 @@
 [![Java 25+](https://img.shields.io/badge/Java-25%2B-red.svg)](https://adoptium.net)
 
 A lightweight **Prometheus exporter plugin for Minecraft [Paper](https://papermc.io) servers** — a
-28 KB jar with **zero runtime dependencies**.
+29 KB jar with **zero runtime dependencies**.
 
 Monitor your Minecraft server's **TPS, MSPT tick lag, entity counts, chunk loading, RAM, CPU and
 player activity**, and graph it all in **Grafana** — without running a heavyweight monitoring stack
@@ -31,7 +31,7 @@ out in Prometheus' text format, and add nothing else.
 
 There is no metrics library, because the exposition format is a few lines of string building. There
 is no embedded web framework, because the JDK already ships an HTTP server. Nothing is shaded, so
-the published jar contains its own classes and two YAML files and that is all — 28 KB, and no new
+the published jar contains its own classes and two YAML files and that is all — 29 KB, and no new
 entries in your dependency tree.
 
 ## Requirements
@@ -51,7 +51,7 @@ the [FAQ](#faq).
 ## Installing
 
 **[⬇ Download the latest release](https://github.com/gzimbric/TickScope/releases/latest)** —
-current version **v1.1.0**, a single 28 KB jar with nothing to install alongside it.
+current version **v1.2.0**, a single 29 KB jar with nothing to install alongside it.
 
 1. Drop the downloaded `TickScope-*.jar` into your server's `plugins/` folder.
 2. Start the server. It serves `http://127.0.0.1:9101/metrics` immediately, no configuration needed.
@@ -335,6 +335,7 @@ server, whichever JDK you compile with. Every push is built the same way by
 
 | Version | Paper | Notes |
 |---|---|---|
+| [v1.2.0](https://github.com/gzimbric/TickScope/releases/tag/v1.2.0) | 1.18.2+ | Backported to 1.18.2; optional bearer auth on the endpoint |
 | [v1.1.0](https://github.com/gzimbric/TickScope/releases/tag/v1.1.0) | 26.2+ | First public release |
 
 ## Feedback and issues
