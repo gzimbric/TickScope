@@ -36,8 +36,13 @@ entries in your dependency tree.
 
 ## Requirements
 
-- Paper **26.2** or newer
-- Java **25** or newer
+- Paper **1.18.2** or newer
+- Java **17** or newer
+
+One jar covers every version. It is built against the 1.18.2 API and targets Java 17, which is
+Minecraft 1.18's own runtime requirement, so a single build runs unchanged from 1.18.2 through the
+current release. Verified on 1.18.2, 1.19.4, 1.20.6, 1.21.4 and 26.2: identical metric families,
+identical label values.
 
 Spigot and Bukkit are not supported: the exporter relies on Paper's `getTickTimes()` and its O(1)
 per-world counters, which is precisely what keeps it cheap. Purpur works. **Folia does not** — see
@@ -293,9 +298,9 @@ export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
 mvn clean package
 ```
 
-The jar lands in `target/`. `paper-api` is a `provided` dependency and is never bundled. JDK 25 is
-required: paper-api 26.2 ships Java 25 class files, and an older JDK fails with *class file has
-wrong version*. Every push is built the same way by
+The jar lands in `target/`. `paper-api` is a `provided` dependency and is never bundled. Any JDK 17
+or newer will do; the build pins `maven.compiler.release` to 17 so the jar loads on every supported
+server, whichever JDK you compile with. Every push is built the same way by
 [CI](https://github.com/gzimbric/TickScope/actions), so the released jar is reproducible.
 
 ## Releases

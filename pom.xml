@@ -34,9 +34,9 @@
   </scm>
 
   <properties>
-    <maven.compiler.release>25</maven.compiler.release>
+    <maven.compiler.release>17</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <paper.version>26.2.build.100-stable</paper.version>
+    <paper.version>1.18.2-R0.1-SNAPSHOT</paper.version>
   </properties>
 
   <repositories>

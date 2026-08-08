@@ -113,7 +113,7 @@ public final class TickScope extends JavaPlugin {
         switch (sub) {
             case "status" -> {
                 Snapshot s = latest;
-                sender.sendMessage("TickScope " + getPluginMeta().getVersion());
+                sender.sendMessage("TickScope " + getDescription().getVersion());
                 for (Map.Entry<String, String> e : collector.describe().entrySet()) {
                     sender.sendMessage("  " + e.getKey() + ": " + e.getValue());
                 }

@@ -1,7 +1,7 @@
 name: TickScope
 version: ${project.version}
 main: cc.zimbri.tickscope.TickScope
-api-version: "26.2"
+api-version: "1.18"
 load: POSTWORLD
 description: Prometheus metrics exporter for Paper - TPS, MSPT, entities, chunks, JVM. No runtime dependencies.
 author: Gabe Zimbric
