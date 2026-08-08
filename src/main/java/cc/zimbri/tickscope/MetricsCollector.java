@@ -21,6 +21,7 @@ import com.sun.management.OperatingSystemMXBean;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 
 import java.lang.management.ClassLoadingMXBean;
@@ -35,6 +36,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -111,7 +113,7 @@ final class MetricsCollector {
         for (World w : Bukkit.getWorlds()) {
             Map<String, Integer> byType = new HashMap<>();
             for (Entity e : w.getEntities()) {
-                byType.merge(e.getType().name().toLowerCase(), 1, Integer::sum);
+                byType.merge(typeName(e.getType()), 1, Integer::sum);
             }
             byType.forEach((type, n) -> out.add(new Snapshot.TypeCount(w.getName(), type, n)));
         }
@@ -182,5 +184,20 @@ final class MetricsCollector {
         m.put("per-world", String.valueOf(perWorld));
         m.put("entity-type-series", String.valueOf(entityTypes.size()));
         return m;
+    }
+
+    /**
+     * The Minecraft registry name rather than the Bukkit enum name. Bukkit realigned the
+     * EntityType enum with the registry in 1.20.5, renaming several constants — ENDER_CRYSTAL
+     * became END_CRYSTAL — so enum names label the same entity differently depending on the
+     * server version, and a dashboard query silently stops matching. The registry key is stable
+     * across every supported version. EntityType.UNKNOWN has no key, hence the fallback.
+     */
+    private static String typeName(EntityType t) {
+        try {
+            return t.getKey().getKey();
+        } catch (IllegalArgumentException | UnsupportedOperationException e) {
+            return t.name().toLowerCase(Locale.ROOT);
+        }
     }
 }
