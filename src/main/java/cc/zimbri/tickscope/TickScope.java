@@ -21,7 +21,6 @@ import com.sun.net.httpserver.HttpServer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -33,14 +32,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Prometheus exporter for Paper with no runtime dependencies — the HTTP server is the
  * JDK's own, and the exposition format is written directly.
  *
- * <p>Concurrency contract: all Bukkit reads happen in the scheduler tasks below, on the
- * main thread. The HTTP handler only serialises the most recent published snapshot, so a
- * scrape can never block or race the server thread.
+ * <p>Concurrency contract: Bukkit reads happen in platform-owned scheduler tasks (Paper's main
+ * thread, Folia's global region, or an entity's owning region). The HTTP handler only serialises
+ * the most recent immutable snapshot, so a scrape never blocks a tick thread.
  */
 public final class TickScope extends JavaPlugin {
 
@@ -49,10 +49,13 @@ public final class TickScope extends JavaPlugin {
 
     private HttpServer http;
     private ExecutorService httpExecutor;
-    private BukkitTask sampler;
-    private BukkitTask entitySampler;
+    private PlatformScheduler scheduler;
+    private PlatformScheduler.TaskHandle sampler;
+    private PlatformScheduler.TaskHandle entitySampler;
+    private FoliaPlayerSampler foliaPlayers;
     private MetricsCollector collector;
     private EventCounters events;
+    private final AtomicLong foliaPlayerSampleGeneration = new AtomicLong();
     private volatile Snapshot latest;
     private Settings active;
 
@@ -71,6 +74,7 @@ public final class TickScope extends JavaPlugin {
         getServer().getPluginManager().registerEvents(events, this);
 
         try {
+            scheduler = PlatformScheduler.create(this);
             Settings settings = readSettings();
             configureCollector(settings);
             startHttp(settings);
@@ -120,12 +124,19 @@ public final class TickScope extends JavaPlugin {
                         + active.path);
                 sender.sendMessage("  collection-interval: " + active.interval + " ticks");
                 sender.sendMessage("  entity-interval: "
-                        + (active.byType ? active.typeInterval + " ticks" : "disabled"));
+                        + (active.byType && !scheduler.isFolia()
+                        ? active.typeInterval + " ticks" : "disabled"));
                 // State only -- never the token itself.
                 sender.sendMessage("  auth: " + (active.token.isEmpty() ? "none" : "required"));
-                sender.sendMessage(String.format(
-                        "  mspt avg %.2f  p95 %.2f  max %.2f  (%d samples)",
-                        s.ticks().avgMs(), s.ticks().p95Ms(), s.ticks().maxMs(), s.ticks().samples()));
+                if (scheduler.isFolia()) {
+                    sender.sendMessage("  tick-metrics: region TPS (exact MSPT unavailable)");
+                    sender.sendMessage("  region-tps-windows: " + s.regionTps().size());
+                } else {
+                    sender.sendMessage(String.format(
+                            "  mspt avg %.2f  p95 %.2f  max %.2f  (%d samples)",
+                            s.ticks().avgMs(), s.ticks().p95Ms(), s.ticks().maxMs(),
+                            s.ticks().samples()));
+                }
                 sender.sendMessage(String.format(
                         "  players %d/%d  worlds %d  collection %.3f ms",
                         s.playersOnline(), s.playersMax(), s.worlds().size(),
@@ -177,6 +188,9 @@ public final class TickScope extends JavaPlugin {
     }
 
     private void configureCollector(Settings settings) {
+        // Invalidate entity-scheduler callbacks that may still be completing from the previous
+        // configuration. A Folia task already handed to a player cannot be synchronously canceled.
+        foliaPlayerSampleGeneration.incrementAndGet();
         if (sampler != null) sampler.cancel();
         if (entitySampler != null) entitySampler.cancel();
         sampler = null;
@@ -186,16 +200,39 @@ public final class TickScope extends JavaPlugin {
         String paperVersion = getServer().getVersion();
         String javaVersion = System.getProperty("java.version", "unknown");
         collector = new MetricsCollector(settings.serverId, settings.perWorld, events,
-                pluginVersion, paperVersion, javaVersion);
-        // Configuration is only applied from Paper's main thread, so publish a real
-        // sample immediately rather than exposing an all-zero placeholder after reload.
-        latest = collector.collect();
-        sampler = getServer().getScheduler().runTaskTimer(
-                this, () -> latest = collector.collect(), settings.interval, settings.interval);
-        if (settings.byType) {
-            entitySampler = getServer().getScheduler().runTaskTimer(
-                    this, collector::collectEntityTypes, 40L, settings.typeInterval);
+                pluginVersion, paperVersion, javaVersion,
+                scheduler.isFolia() ? "folia" : "paper");
+        if (scheduler.isFolia()) {
+            // onEnable and player commands do not necessarily own world data on Folia. Publish a
+            // placeholder and let the first global-region task replace it on the next tick.
+            latest = collector.initialSnapshot();
+            foliaPlayers = new FoliaPlayerSampler(scheduler);
+            sampler = scheduler.repeatGlobal(this::collectFolia, 1L, settings.interval);
+            if (settings.byType) {
+                getLogger().warning("Entity-type metrics are disabled on Folia because a "
+                        + "world-wide entity walk crosses region ownership boundaries");
+            }
+        } else {
+            // Paper configuration is applied on the main thread, so publish a real sample now.
+            latest = collector.collectPaper();
+            sampler = scheduler.repeatGlobal(
+                    () -> latest = collector.collectPaper(), settings.interval, settings.interval);
+            if (settings.byType) {
+                entitySampler = scheduler.repeatGlobal(
+                        collector::collectEntityTypes, 40L, settings.typeInterval);
+            }
         }
+    }
+
+    private void collectFolia() {
+        latest = collector.collectFolia();
+        long generation = foliaPlayerSampleGeneration.incrementAndGet();
+        MetricsCollector samplingCollector = collector;
+        foliaPlayers.sample(getServer().getOnlinePlayers(), players -> {
+            if (foliaPlayerSampleGeneration.get() == generation) {
+                samplingCollector.updateFoliaPlayers(players);
+            }
+        });
     }
 
     private boolean reloadRuntime() {
@@ -301,7 +338,8 @@ public final class TickScope extends JavaPlugin {
     private void logServing(Settings settings) {
         getLogger().info("Serving " + settings.path + " on " + settings.bind + ":"
                 + settings.port + " as server=\"" + settings.serverId + "\" (every "
-                + settings.interval + " ticks, "
+                + settings.interval + " ticks, " + (scheduler.isFolia() ? "Folia" : "Paper")
+                + ", "
                 + (settings.token.isEmpty() ? "no auth)" : "auth required)"));
     }
 }

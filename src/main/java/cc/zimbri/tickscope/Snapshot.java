@@ -23,14 +23,15 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * One immutable sample set. The main-thread collector publishes these; HTTP threads
- * only ever read the latest one, so a scrape never touches the server thread.
+ * One immutable sample set. A platform-owned collector publishes these; HTTP threads only ever
+ * read the latest one, so a scrape never touches a Paper main thread or Folia region thread.
  */
 record Snapshot(
         String serverId,
         String tickScopeVersion,
         String paperVersion,
         String javaVersion,
+        String platform,
         double collectionSeconds,
         double entityCollectionSeconds,
         Ticks ticks,
@@ -42,6 +43,7 @@ record Snapshot(
         int pingMaxMs,
         List<WorldStat> worlds,
         List<TypeCount> entityTypes,
+        List<RegionTps> regionTps,
         Jvm jvm,
         Proc proc,
         Map<String, Long> events) {
@@ -50,6 +52,7 @@ record Snapshot(
         tps = tps.clone();
         worlds = List.copyOf(worlds);
         entityTypes = List.copyOf(entityTypes);
+        regionTps = List.copyOf(regionTps);
         events = Collections.unmodifiableMap(new LinkedHashMap<>(events));
     }
 
@@ -67,6 +70,9 @@ record Snapshot(
 
     record TypeCount(String world, String type, int count) {}
 
+    /** Folia TPS summaries sampled at player-owned regions; samples may share a region. */
+    record RegionTps(String window, int samples, double min, double avg, double max) {}
+
     record Gc(String name, long count, double seconds) {}
 
     record Jvm(long heapUsed, long heapCommitted, long heapMax, long heapInit,
@@ -79,9 +85,15 @@ record Snapshot(
 
     static Snapshot empty(String serverId, String tickScopeVersion,
                           String paperVersion, String javaVersion) {
+        return empty(serverId, tickScopeVersion, paperVersion, javaVersion, "paper");
+    }
+
+    static Snapshot empty(String serverId, String tickScopeVersion,
+                          String paperVersion, String javaVersion, String platform) {
         return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion,
+                platform,
                 0d, 0d, Ticks.EMPTY, new double[]{0, 0, 0},
-                0, 0, 0, 0d, 0, List.of(), List.of(),
+                0, 0, 0, 0d, 0, List.of(), List.of(), List.of(),
                 new Jvm(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, List.of()),
                 new Proc(0, 0, 0, 0, 0), Map.of());
     }

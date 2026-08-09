@@ -25,7 +25,7 @@ class PrometheusWriterTest {
         assertTrue(rendered.contains("# TYPE mc_tickscope_info gauge\n"));
         assertTrue(rendered.contains(
                 "mc_tickscope_info{server=\"srv\\\"\\\\\\n\",version=\"1.2.1\","
-                        + "paper=\"Paper \\\"test\\\"\",java=\"17\"} 1\n"));
+                        + "paper=\"Paper \\\"test\\\"\",java=\"17\",platform=\"paper\"} 1\n"));
         assertTrue(rendered.contains("# TYPE mc_entity_collection_duration_seconds gauge\n"));
     }
 
@@ -36,5 +36,16 @@ class PrometheusWriterTest {
         tps[0] = 99;
 
         assertEquals(0, snapshot.tps()[0]);
+    }
+
+    @Test
+    void foliaDoesNotMislabelGlobalTickDataAsServerMetrics() {
+        Snapshot snapshot = Snapshot.empty("folia", "1", "Folia", "21", "folia");
+
+        String rendered = PrometheusWriter.render(snapshot);
+
+        assertTrue(rendered.contains("platform=\"folia\""));
+        assertTrue(!rendered.contains("# TYPE mc_mspt_ms"));
+        assertTrue(!rendered.contains("# TYPE mc_tps"));
     }
 }
