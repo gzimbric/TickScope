@@ -51,9 +51,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          artifact="target/TickScope-$VERSION.jar"
+          artifact_name="TickScope-$VERSION.jar"
+          artifact="target/$artifact_name"
           test -f "$artifact"
-          sha256sum "$artifact" > "$artifact.sha256"
+          (cd target && sha256sum "$artifact_name") > "$artifact.sha256"
 
           previous=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')
           if [[ -n "$previous" && "$previous" != "$RELEASE_TAG" ]]; then
