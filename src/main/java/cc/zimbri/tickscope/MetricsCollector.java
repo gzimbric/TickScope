@@ -50,6 +50,9 @@ final class MetricsCollector {
     private static final double NANOS_PER_MS = 1_000_000d;
 
     private final String serverId;
+    private final String tickScopeVersion;
+    private final String paperVersion;
+    private final String javaVersion;
     private final boolean perWorld;
     private final EventCounters events;
 
@@ -67,11 +70,16 @@ final class MetricsCollector {
      * Paper counter, so it runs on its own slower cadence and is cached here.
      */
     private volatile List<Snapshot.TypeCount> entityTypes = List.of();
+    private volatile double entityCollectionSeconds;
 
-    MetricsCollector(String serverId, boolean perWorld, EventCounters events) {
+    MetricsCollector(String serverId, boolean perWorld, EventCounters events,
+                     String tickScopeVersion, String paperVersion, String javaVersion) {
         this.serverId = serverId;
         this.perWorld = perWorld;
         this.events = events;
+        this.tickScopeVersion = tickScopeVersion;
+        this.paperVersion = paperVersion;
+        this.javaVersion = javaVersion;
     }
 
     Snapshot collect() {
@@ -99,16 +107,21 @@ final class MetricsCollector {
             if (ping > pingMax) pingMax = ping;
         }
 
+        Snapshot.Jvm jvm = jvm();
+        Snapshot.Proc proc = proc();
+        Map<String, Long> eventCounts = events.snapshot();
         double collectionSeconds = (System.nanoTime() - started) / NANOS_PER_SEC;
-        return new Snapshot(serverId, collectionSeconds, ticks, tps,
+        return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion,
+                collectionSeconds, entityCollectionSeconds, ticks, tps,
                 online, Bukkit.getMaxPlayers(),
                 Bukkit.getPluginManager().getPlugins().length,
                 online == 0 ? 0d : (double) pingSum / online, pingMax,
-                List.copyOf(worlds), entityTypes, jvm(), proc(), events.snapshot());
+                List.copyOf(worlds), entityTypes, jvm, proc, eventCounts);
     }
 
     /** Separate cadence: this one is O(entities), unlike everything in collect(). */
     void collectEntityTypes() {
+        long started = System.nanoTime();
         List<Snapshot.TypeCount> out = new ArrayList<>();
         for (World w : Bukkit.getWorlds()) {
             Map<String, Integer> byType = new HashMap<>();
@@ -118,6 +131,7 @@ final class MetricsCollector {
             byType.forEach((type, n) -> out.add(new Snapshot.TypeCount(w.getName(), type, n)));
         }
         entityTypes = List.copyOf(out);
+        entityCollectionSeconds = (System.nanoTime() - started) / NANOS_PER_SEC;
     }
 
     private Snapshot.Jvm jvm() {

@@ -2,15 +2,16 @@
 
 # Value of the `server` label on every metric. Keep this equal to the Loki `host`
 # label so metrics and logs line up when correlating in Grafana.
-server-id: "mcbox"
+server-id: "paper"
 
-# IMPORTANT when running in Docker: bind 0.0.0.0 here, NOT 127.0.0.1.
+# Loopback is the safe default: a fresh install is not reachable from the LAN.
+# IMPORTANT when running in Docker: change this to 0.0.0.0, NOT 127.0.0.1.
 # Docker's port publishing connects to the container's IP, not its loopback, so
 # binding to 127.0.0.1 inside the container makes the port unreachable even with
 # a -p mapping. Keep the exposure limit on the publish side instead, e.g.
 #   ports: ["127.0.0.1:9101:9101"]
 # which is what actually restricts this to the host's loopback.
-bind-address: "0.0.0.0"
+bind-address: "127.0.0.1"
 port: 9101
 path: "/metrics"
 

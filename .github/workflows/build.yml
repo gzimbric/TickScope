@@ -9,20 +9,22 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: ["17", "21", "25"]
     steps:
       - uses: actions/checkout@v4
 
-      # paper-api 26.2 ships Java 25 class files (major 69), so an older JDK
-      # fails with "class file has wrong version".
       - uses: actions/setup-java@v4
         with:
-          java-version: "25"
+          java-version: ${{ matrix.java }}
           distribution: temurin
           cache: maven
 
       - run: mvn -B clean package
 
       - uses: actions/upload-artifact@v4
+        if: matrix.java == '17'
         with:
           name: TickScope
           path: target/TickScope-*.jar

@@ -29,6 +29,13 @@ final class PrometheusWriter {
         StringBuilder b = new StringBuilder(8192);
         String srv = esc(s.serverId());
 
+        help(b, "mc_tickscope_info", "gauge", "TickScope and runtime version information");
+        b.append("mc_tickscope_info{server=\"").append(srv)
+         .append("\",version=\"").append(esc(s.tickScopeVersion()))
+         .append("\",paper=\"").append(esc(s.paperVersion()))
+         .append("\",java=\"").append(esc(s.javaVersion()))
+         .append("\"} 1\n");
+
         // ---- tick timing ----------------------------------------------------
         // Percentiles come from Paper's raw per-tick nanosecond array, so these are
         // exact over the sample window rather than a bucketed estimate.
@@ -126,6 +133,9 @@ final class PrometheusWriter {
         // ---- self -----------------------------------------------------------
         gauge(b, "mc_collection_duration_seconds",
                 "Time the last main-thread collection took", srv, s.collectionSeconds());
+        gauge(b, "mc_entity_collection_duration_seconds",
+                "Time the last entity-by-type collection took", srv,
+                s.entityCollectionSeconds());
         return b.toString();
     }
 

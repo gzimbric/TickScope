@@ -17,6 +17,8 @@
  */
 package cc.zimbri.tickscope;
 
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -26,7 +28,11 @@ import java.util.Map;
  */
 record Snapshot(
         String serverId,
+        String tickScopeVersion,
+        String paperVersion,
+        String javaVersion,
         double collectionSeconds,
+        double entityCollectionSeconds,
         Ticks ticks,
         double[] tps,
         int playersOnline,
@@ -39,6 +45,18 @@ record Snapshot(
         Jvm jvm,
         Proc proc,
         Map<String, Long> events) {
+
+    Snapshot {
+        tps = tps.clone();
+        worlds = List.copyOf(worlds);
+        entityTypes = List.copyOf(entityTypes);
+        events = Collections.unmodifiableMap(new LinkedHashMap<>(events));
+    }
+
+    @Override
+    public double[] tps() {
+        return tps.clone();
+    }
 
     record Ticks(double avgMs, double minMs, double maxMs,
                  double p50Ms, double p95Ms, double p99Ms, int samples) {
@@ -59,8 +77,10 @@ record Snapshot(
     record Proc(double processCpuRatio, double systemCpuRatio,
                 double processCpuSeconds, double startTimeSeconds, double uptimeSeconds) {}
 
-    static Snapshot empty(String serverId) {
-        return new Snapshot(serverId, 0d, Ticks.EMPTY, new double[]{0, 0, 0},
+    static Snapshot empty(String serverId, String tickScopeVersion,
+                          String paperVersion, String javaVersion) {
+        return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion,
+                0d, 0d, Ticks.EMPTY, new double[]{0, 0, 0},
                 0, 0, 0, 0d, 0, List.of(), List.of(),
                 new Jvm(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, List.of()),
                 new Proc(0, 0, 0, 0, 0), Map.of());

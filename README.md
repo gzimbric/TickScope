@@ -5,11 +5,11 @@
 [![latest release](https://img.shields.io/github/v/release/gzimbric/TickScope?label=download&color=brightgreen)](https://github.com/gzimbric/TickScope/releases/latest)
 [![build](https://github.com/gzimbric/TickScope/actions/workflows/build.yml/badge.svg)](https://github.com/gzimbric/TickScope/actions/workflows/build.yml)
 [![licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue.svg)](LICENSE)
-[![Paper 26.2+](https://img.shields.io/badge/Paper-26.2%2B-orange.svg)](https://papermc.io)
-[![Java 25+](https://img.shields.io/badge/Java-25%2B-red.svg)](https://adoptium.net)
+[![Paper 1.18.2+](https://img.shields.io/badge/Paper-1.18.2%2B-orange.svg)](https://papermc.io)
+[![Java 17+](https://img.shields.io/badge/Java-17%2B-red.svg)](https://adoptium.net)
 
 A lightweight **Prometheus exporter plugin for Minecraft [Paper](https://papermc.io) servers** — a
-29 KB jar with **zero runtime dependencies**.
+34 KB jar with **zero runtime dependencies**.
 
 Monitor your Minecraft server's **TPS, MSPT tick lag, entity counts, chunk loading, RAM, CPU and
 player activity**, and graph it all in **Grafana** — without running a heavyweight monitoring stack
@@ -31,7 +31,7 @@ out in Prometheus' text format, and add nothing else.
 
 There is no metrics library, because the exposition format is a few lines of string building. There
 is no embedded web framework, because the JDK already ships an HTTP server. Nothing is shaded, so
-the published jar contains its own classes and two YAML files and that is all — 29 KB, and no new
+the published jar contains its own classes and two YAML files and that is all — 34 KB, and no new
 entries in your dependency tree.
 
 ## Requirements
@@ -51,7 +51,7 @@ the [FAQ](#faq).
 ## Installing
 
 **[⬇ Download the latest release](https://github.com/gzimbric/TickScope/releases/latest)** —
-current version **v1.2.0**, a single 29 KB jar with nothing to install alongside it.
+current version **v1.2.1**, a single 34 KB jar with nothing to install alongside it.
 
 1. Drop the downloaded `TickScope-*.jar` into your server's `plugins/` folder.
 2. Start the server. It serves `http://127.0.0.1:9101/metrics` immediately, no configuration needed.
@@ -105,8 +105,8 @@ That is what actually limits the endpoint to the host.
 `plugins/TickScope/config.yml`:
 
 ```yaml
-server-id: "mcbox"          # value of the `server` label on every metric
-bind-address: "0.0.0.0"
+server-id: "paper"          # value of the `server` label on every metric
+bind-address: "127.0.0.1"  # change to 0.0.0.0 inside Docker; restrict the published port
 port: 9101
 path: "/metrics"
 
@@ -144,9 +144,9 @@ Read the [Privacy](#privacy) section before exposing the endpoint — a token is
 | Command | Permission | Description |
 |---|---|---|
 | `/tickscope status` | `tickscope.admin` | Current tick, player and collection figures |
-| `/tickscope reload` | `tickscope.admin` | Re-read config and rebind the HTTP server |
+| `/tickscope reload` | `tickscope.admin` | Validate and apply config; keep the old endpoint if it fails |
 
-Aliased to `/zm`. Both work from the console and over RCON.
+Aliased to `/ts`. Both work from the console and over RCON.
 
 ## Metrics
 
@@ -167,6 +167,7 @@ signal, and the percentiles are exact rather than bucketed (see [Design](#design
 
 | Metric | Labels | Description |
 |---|---|---|
+| `mc_tickscope_info` | `version`, `paper`, `java` | TickScope and runtime build information |
 | `mc_players_online` | | Connected players |
 | `mc_players_max` | | Configured slots |
 | `mc_plugins` | | Loaded plugins |
@@ -221,6 +222,7 @@ worlds are always loaded, so those series are stable.
 | `mc_process_start_time_seconds` | | Process start, unix seconds |
 | `mc_uptime_seconds` | | JVM uptime |
 | `mc_collection_duration_seconds` | | Cost of the exporter's own sampling |
+| `mc_entity_collection_duration_seconds` | | Cost of the entity-by-type scan |
 
 ## Design
 
@@ -239,7 +241,12 @@ and `getPlayerCount()` are counters Paper already maintains, so reading them is 
 roughly 2–3 ms, which the exporter reports as `mc_collection_duration_seconds`.
 
 **One deliberate exception.** `mc_world_entities_by_type` has to walk the entity list, so it runs on
-its own slower cadence and can be switched off entirely.
+its own slower cadence and can be switched off entirely. Its separate cost is reported as
+`mc_entity_collection_duration_seconds`.
+
+**Reloads preserve process-lifetime counters.** `/tickscope reload` validates new settings before
+replacing the collector, keeps the original event listener, and restores the previous HTTP endpoint
+if a rebind fails. `mc_events_total` therefore remains monotonic until the server process restarts.
 
 **Events are counters, not gauges.** A join and a quit between two samples would be invisible to a
 gauge. The listeners run at `MONITOR` priority with `ignoreCancelled`, so counting never influences
@@ -292,13 +299,13 @@ No. This is a backend server plugin. Run it on each Paper instance and distingui
 
 **Will it slow my server down?**
 Sampling costs roughly 2–3 ms every five seconds, and the plugin reports its own cost as
-`mc_collection_duration_seconds` so you can confirm rather than trust. Scrapes never touch the
-server thread at all — see [Design](#design).
+`mc_collection_duration_seconds` and `mc_entity_collection_duration_seconds` so you can confirm
+rather than trust. Scrapes never touch the server thread at all — see [Design](#design).
 
 **Do I need Prometheus, or can I use something else?**
 Any scraper that speaks the Prometheus text format works, including Grafana Alloy, VictoriaMetrics
-and OpenTelemetry Collector. The endpoint is plain HTTP with no authentication, so keep it bound to
-loopback or behind a firewall.
+and OpenTelemetry Collector. The endpoint is plain HTTP and open by default, so keep it bound to
+loopback or behind a firewall; set `auth-token` when anonymous reads are not acceptable.
 
 ## Privacy
 
@@ -322,19 +329,19 @@ You do not need to build anything — prebuilt jars are attached to every
 [release](https://github.com/gzimbric/TickScope/releases). To build it yourself:
 
 ```bash
-export JAVA_HOME=/usr/lib/jvm/java-25-openjdk-amd64
-mvn clean package
+mvn clean verify
 ```
 
 The jar lands in `target/`. `paper-api` is a `provided` dependency and is never bundled. Any JDK 17
 or newer will do; the build pins `maven.compiler.release` to 17 so the jar loads on every supported
-server, whichever JDK you compile with. Every push is built the same way by
-[CI](https://github.com/gzimbric/TickScope/actions), so the released jar is reproducible.
+server, whichever JDK you compile with. CI builds and runs the tests on JDK 17, 21 and 25, so both
+the runtime floor and current Paper runtime are exercised on every push.
 
 ## Releases
 
 | Version | Paper | Notes |
 |---|---|---|
+| [v1.2.1](https://github.com/gzimbric/TickScope/releases/tag/v1.2.1) | 1.18.2+ | Failure-safe reloads, safe bind default, self-observability and automated tests |
 | [v1.2.0](https://github.com/gzimbric/TickScope/releases/tag/v1.2.0) | 1.18.2+ | Backported to 1.18.2; optional bearer auth on the endpoint |
 | [v1.1.0](https://github.com/gzimbric/TickScope/releases/tag/v1.1.0) | 26.2+ | First public release |
 
