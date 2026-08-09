@@ -6,11 +6,12 @@
 [![build](https://github.com/gzimbric/TickScope/actions/workflows/build.yml/badge.svg)](https://github.com/gzimbric/TickScope/actions/workflows/build.yml)
 [![licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue.svg)](LICENSE)
 [![Paper 1.18.2+](https://img.shields.io/badge/Paper-1.18.2%2B-orange.svg)](https://papermc.io)
+[![Folia](https://img.shields.io/badge/Folia-supported-8a5cf5.svg)](https://papermc.io/software/folia)
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-red.svg)](https://adoptium.net)
 
-TickScope is a lightweight Prometheus exporter for Minecraft Paper servers. The dependency-free
-34 KB plugin exposes exact MSPT percentiles, TPS, players, per-world entity and chunk counts, JVM
-and CPU statistics, and player event counters for dashboards in Grafana.
+TickScope is a lightweight Prometheus exporter for Minecraft Paper and Folia servers. The
+dependency-free plugin exposes tick health, players, per-world counters, JVM and CPU statistics,
+and player event counters for dashboards in Grafana.
 
 ```text
 mc_mspt_ms{quantile="p99"} 21.6336
@@ -22,12 +23,13 @@ mc_world_entities_by_type{world="world",type="chicken"} 35
 ## Highlights
 
 - Exact p50, p95, and p99 tick times from Paper's raw tick-duration window
+- Player-active regional TPS summaries on Folia and Folia-compatible forks such as Canvas
 - Per-world entities, entity types, tile entities, chunks, and players
 - JVM memory, threads, garbage collection, process CPU, and uptime
 - No runtime dependencies, outbound telemetry, database, or embedded framework
 - Main-thread-safe snapshots; HTTP scrapes never call Bukkit or block a tick
 - Optional bearer authentication and failure-safe configuration reloads
-- One jar for Paper and Purpur 1.18.2 through 26.2 on Java 17 or newer
+- One jar for Paper and Purpur 1.18.2+, plus Folia and Canvas on supported modern releases
 
 ## Quick start
 
@@ -72,9 +74,16 @@ The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickSc
 
 ## Compatibility
 
-Paper 1.18.2+ and Paper-compatible Purpur servers are supported. Spigot, Bukkit, Folia, Velocity,
-and BungeeCord are not supported. Install TickScope on each Paper backend in a proxy network and
-assign each server a unique `server-id`.
+Paper 1.18.2+, Paper-compatible Purpur servers, Folia, and Folia-compatible Canvas servers are
+supported. Spigot, Bukkit, Velocity, and BungeeCord are not supported. Install TickScope on each
+backend in a proxy network and assign each server a unique `server-id`.
+
+Paper exposes a single server tick, so TickScope publishes exact `mc_mspt_ms`, `mc_tick_samples`,
+and `mc_tps` series there. Folia has no truthful server-wide equivalent. On Folia, those series are
+intentionally absent and are replaced by `mc_folia_region_tps` summaries sampled at online player
+locations. Entity-by-type metrics are also disabled on Folia because a world-wide entity walk
+would cross region ownership boundaries. Other server, world, player, event, JVM, and process
+metrics remain available.
 
 ## Download and support
 

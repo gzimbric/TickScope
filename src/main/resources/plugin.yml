@@ -3,8 +3,9 @@ version: ${project.version}
 main: cc.zimbri.tickscope.TickScope
 api-version: "1.18"
 load: POSTWORLD
-description: Prometheus metrics exporter for Paper - TPS, MSPT, entities, chunks, JVM. No runtime dependencies.
+description: Prometheus metrics exporter for Paper and Folia. No runtime dependencies.
 author: Gabe Zimbric
+folia-supported: true
 commands:
   tickscope:
     description: Show TickScope status or reload its config

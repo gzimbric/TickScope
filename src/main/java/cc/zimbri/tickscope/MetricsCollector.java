@@ -40,9 +40,9 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * Gathers a {@link Snapshot}. Every Bukkit read here must happen on the main thread —
- * {@link #collect()} and {@link #collectEntityTypes()} are only ever called from
- * scheduler tasks, never from an HTTP thread.
+ * Gathers a {@link Snapshot}. Bukkit reads happen on the owning platform scheduler: Paper's main
+ * thread or Folia's global region. Player-owned Folia reads are supplied by
+ * {@link FoliaPlayerSampler}; an HTTP thread never calls this class.
  */
 final class MetricsCollector {
 
@@ -53,6 +53,7 @@ final class MetricsCollector {
     private final String tickScopeVersion;
     private final String paperVersion;
     private final String javaVersion;
+    private final String platform;
     private final boolean perWorld;
     private final EventCounters events;
 
@@ -71,22 +72,44 @@ final class MetricsCollector {
      */
     private volatile List<Snapshot.TypeCount> entityTypes = List.of();
     private volatile double entityCollectionSeconds;
+    private volatile PlayerSample foliaPlayers = PlayerSample.EMPTY;
 
     MetricsCollector(String serverId, boolean perWorld, EventCounters events,
-                     String tickScopeVersion, String paperVersion, String javaVersion) {
+                     String tickScopeVersion, String paperVersion, String javaVersion,
+                     String platform) {
         this.serverId = serverId;
         this.perWorld = perWorld;
         this.events = events;
         this.tickScopeVersion = tickScopeVersion;
         this.paperVersion = paperVersion;
         this.javaVersion = javaVersion;
+        this.platform = platform;
     }
 
-    Snapshot collect() {
+    Snapshot collectPaper() {
+        return collect(false);
+    }
+
+    Snapshot collectFolia() {
+        return collect(true);
+    }
+
+    Snapshot initialSnapshot() {
+        return Snapshot.empty(serverId, tickScopeVersion, paperVersion, javaVersion, platform);
+    }
+
+    void updateFoliaPlayers(PlayerSample players) {
+        foliaPlayers = players;
+    }
+
+    private Snapshot collect(boolean folia) {
         long started = System.nanoTime();
 
-        Snapshot.Ticks ticks = summarise(Bukkit.getTickTimes());
-        double[] tps = Bukkit.getTPS();
+        // Folia has no single server tick. Publishing its global-region tick history as server
+        // MSPT would be technically valid data with a misleading meaning, so those Paper-only
+        // series are deliberately absent. Region TPS is sampled separately at player locations.
+        Snapshot.Ticks ticks = folia ? Snapshot.Ticks.EMPTY : summarise(Bukkit.getTickTimes());
+        double[] tps = folia ? new double[0] : Bukkit.getTPS();
 
         List<Snapshot.WorldStat> worlds = new ArrayList<>();
         if (perWorld) {
@@ -97,26 +120,33 @@ final class MetricsCollector {
             }
         }
 
-        int online = 0;
-        long pingSum = 0;
-        int pingMax = 0;
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            online++;
-            int ping = p.getPing();
-            pingSum += ping;
-            if (ping > pingMax) pingMax = ping;
-        }
+        PlayerSample playerSample = folia ? foliaPlayers : paperPlayers();
 
         Snapshot.Jvm jvm = jvm();
         Snapshot.Proc proc = proc();
         Map<String, Long> eventCounts = events.snapshot();
         double collectionSeconds = (System.nanoTime() - started) / NANOS_PER_SEC;
-        return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion,
+        return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion, platform,
                 collectionSeconds, entityCollectionSeconds, ticks, tps,
-                online, Bukkit.getMaxPlayers(),
+                playerSample.online(), Bukkit.getMaxPlayers(),
                 Bukkit.getPluginManager().getPlugins().length,
-                online == 0 ? 0d : (double) pingSum / online, pingMax,
-                List.copyOf(worlds), entityTypes, jvm, proc, eventCounts);
+                playerSample.pingAvgMs(), playerSample.pingMaxMs(),
+                List.copyOf(worlds), entityTypes, playerSample.regionTps(),
+                jvm, proc, eventCounts);
+    }
+
+    private PlayerSample paperPlayers() {
+        int online = 0;
+        long pingSum = 0;
+        int pingMax = 0;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            online++;
+            int ping = Math.max(0, player.getPing());
+            pingSum += ping;
+            pingMax = Math.max(pingMax, ping);
+        }
+        return new PlayerSample(online, online == 0 ? 0d : (double) pingSum / online,
+                pingMax, List.of());
     }
 
     /** Separate cadence: this one is O(entities), unlike everything in collect(). */
@@ -195,9 +225,19 @@ final class MetricsCollector {
     Map<String, String> describe() {
         Map<String, String> m = new LinkedHashMap<>();
         m.put("server-id", serverId);
+        m.put("platform", platform);
         m.put("per-world", String.valueOf(perWorld));
         m.put("entity-type-series", String.valueOf(entityTypes.size()));
         return m;
+    }
+
+    record PlayerSample(int online, double pingAvgMs, int pingMaxMs,
+                        List<Snapshot.RegionTps> regionTps) {
+        static final PlayerSample EMPTY = new PlayerSample(0, 0d, 0, List.of());
+
+        PlayerSample {
+            regionTps = List.copyOf(regionTps);
+        }
     }
 
     /**

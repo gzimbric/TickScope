@@ -34,26 +34,43 @@ final class PrometheusWriter {
          .append("\",version=\"").append(esc(s.tickScopeVersion()))
          .append("\",paper=\"").append(esc(s.paperVersion()))
          .append("\",java=\"").append(esc(s.javaVersion()))
+         .append("\",platform=\"").append(esc(s.platform()))
          .append("\"} 1\n");
 
         // ---- tick timing ----------------------------------------------------
         // Percentiles come from Paper's raw per-tick nanosecond array, so these are
         // exact over the sample window rather than a bucketed estimate.
-        help(b, "mc_mspt_ms", "gauge", "Milliseconds per tick. One tick is 50ms.");
-        for (var q : new Object[][]{{"avg", s.ticks().avgMs()}, {"min", s.ticks().minMs()},
-                {"max", s.ticks().maxMs()}, {"p50", s.ticks().p50Ms()},
-                {"p95", s.ticks().p95Ms()}, {"p99", s.ticks().p99Ms()}}) {
-            b.append("mc_mspt_ms{server=\"").append(srv).append("\",quantile=\"")
-             .append(q[0]).append("\"} ").append(num((double) q[1])).append('\n');
-        }
-        gauge(b, "mc_tick_samples", "Ticks in the current sample window", srv, s.ticks().samples());
+        if (!s.platform().equals("folia")) {
+            help(b, "mc_mspt_ms", "gauge", "Milliseconds per tick. One tick is 50ms.");
+            for (var q : new Object[][]{{"avg", s.ticks().avgMs()}, {"min", s.ticks().minMs()},
+                    {"max", s.ticks().maxMs()}, {"p50", s.ticks().p50Ms()},
+                    {"p95", s.ticks().p95Ms()}, {"p99", s.ticks().p99Ms()}}) {
+                b.append("mc_mspt_ms{server=\"").append(srv).append("\",quantile=\"")
+                 .append(q[0]).append("\"} ").append(num((double) q[1])).append('\n');
+            }
+            gauge(b, "mc_tick_samples", "Ticks in the current sample window", srv,
+                    s.ticks().samples());
 
-        help(b, "mc_tps", "gauge", "Ticks per second, capped at 20");
-        String[] windows = {"1m", "5m", "15m"};
-        double[] tps = s.tps();
-        for (int i = 0; i < windows.length && i < tps.length; i++) {
-            b.append("mc_tps{server=\"").append(srv).append("\",window=\"")
-             .append(windows[i]).append("\"} ").append(num(tps[i])).append('\n');
+            help(b, "mc_tps", "gauge", "Ticks per second, capped at 20");
+            String[] windows = {"1m", "5m", "15m"};
+            double[] tps = s.tps();
+            for (int i = 0; i < windows.length && i < tps.length; i++) {
+                b.append("mc_tps{server=\"").append(srv).append("\",window=\"")
+                 .append(windows[i]).append("\"} ").append(num(tps[i])).append('\n');
+            }
+        } else if (!s.regionTps().isEmpty()) {
+            help(b, "mc_folia_region_tps", "gauge",
+                    "TPS across player-active Folia region samples");
+            help(b, "mc_folia_region_tps_samples", "gauge",
+                    "Player-location samples in the Folia TPS summary");
+            for (Snapshot.RegionTps region : s.regionTps()) {
+                foliaTpsLine(b, srv, region.window(), "min", region.min());
+                foliaTpsLine(b, srv, region.window(), "avg", region.avg());
+                foliaTpsLine(b, srv, region.window(), "max", region.max());
+                b.append("mc_folia_region_tps_samples{server=\"").append(srv)
+                 .append("\",window=\"").append(region.window()).append("\"} ")
+                 .append(region.samples()).append('\n');
+            }
         }
 
         // ---- server ---------------------------------------------------------
@@ -167,6 +184,13 @@ final class PrometheusWriter {
     private static void gcLine(StringBuilder b, String name, String srv, String gc, double v) {
         b.append(name).append("{server=\"").append(srv).append("\",gc=\"")
          .append(esc(gc)).append("\"} ").append(num(v)).append('\n');
+    }
+
+    private static void foliaTpsLine(StringBuilder b, String srv, String window,
+                                     String statistic, double value) {
+        b.append("mc_folia_region_tps{server=\"").append(srv).append("\",window=\"")
+         .append(window).append("\",statistic=\"").append(statistic).append("\"} ")
+         .append(num(value)).append('\n');
     }
 
     /** Locale.ROOT matters: a comma decimal separator would corrupt the exposition. */

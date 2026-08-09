@@ -1,4 +1,4 @@
-# TickScope — Prometheus exporter for Paper. No runtime dependencies.
+# TickScope — Prometheus exporter for Paper and Folia. No runtime dependencies.
 
 # Value of the `server` label on every metric. Keep this equal to the Loki `host`
 # label so metrics and logs line up when correlating in Grafana.
@@ -24,7 +24,7 @@ path: "/metrics"
 # reads; for confidentiality put a TLS-terminating reverse proxy in front.
 auth-token: ""
 
-# How often to sample on the main thread. 100 ticks = 5s.
+# How often to sample on Paper's main thread or Folia's global region. 100 ticks = 5s.
 # Every reading here is O(1) — Paper keeps entity/chunk/tile counts as counters — so
 # this is cheap, but sampling faster than Prometheus scrapes buys nothing.
 collection-interval-ticks: 100
@@ -36,5 +36,6 @@ entity-types:
   # Entities broken down by type, e.g. mc_world_entities_by_type{type="zombie"}.
   # This is the ONLY reading that iterates entities rather than reading a counter,
   # so it runs on its own slower cadence. Turn it off if entity counts get extreme.
+  # Folia disables this series because a world-wide entity walk would cross regions.
   enabled: true
   interval-ticks: 600
