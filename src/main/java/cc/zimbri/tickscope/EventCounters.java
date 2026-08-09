@@ -22,8 +22,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.event.player.PlayerLoginEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.LinkedHashMap;
@@ -53,7 +53,15 @@ final class EventCounters implements Listener {
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
-    public void onLogin(PlayerLoginEvent e) { bump("login"); }
+    public void onLogin(AsyncPlayerPreLoginEvent e) {
+        recordLogin(e.getLoginResult());
+    }
+
+    void recordLogin(AsyncPlayerPreLoginEvent.Result result) {
+        if (result == AsyncPlayerPreLoginEvent.Result.ALLOWED) {
+            bump("login");
+        }
+    }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onJoin(PlayerJoinEvent e) { bump("join"); }

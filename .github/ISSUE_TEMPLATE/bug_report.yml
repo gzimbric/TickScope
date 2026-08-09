@@ -23,7 +23,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Install TickScope 1.2.1 on a fresh Paper server
+        1. Install TickScope 1.2.2 on a fresh Paper server
         2. Start the server
         3. curl http://127.0.0.1:9101/metrics
     validations:
@@ -34,7 +34,7 @@ body:
     attributes:
       label: TickScope version
       description: From `/tickscope status` or the jar filename.
-      placeholder: "1.2.1"
+      placeholder: "1.2.2"
     validations:
       required: true
 
