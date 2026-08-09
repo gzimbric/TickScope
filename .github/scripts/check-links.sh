@@ -10,7 +10,7 @@
 # Runs in CI weekly, and by hand: bash .github/scripts/check-links.sh
 set -uo pipefail
 
-SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|\.example([:/]|$)'
+SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|api\.modrinth\.com/v2$|\.example([:/]|$)'
 WIKI_DIR=${WIKI_DIR:-_wiki}
 SEARCH_PATHS=(README.md SECURITY.md pom.xml .github src/main/resources src/main/java assets/grafana)
 
@@ -19,9 +19,10 @@ if [[ -d "$WIKI_DIR" ]]; then
 fi
 
 mapfile -t URLS < <(
-  grep -rhoE 'https?://[^)"'"'"' <>]+' \
+  grep -rhoE --exclude-dir=.git 'https?://[^)"'"'"' <>]+' \
        "${SEARCH_PATHS[@]}" 2>/dev/null \
   | sed -e 's/[].,;:)`]*$//' -e 's/\\$//' \
+  | grep -v '\$' \
   | grep -vE "$SKIP" \
   | sort -u
 )
