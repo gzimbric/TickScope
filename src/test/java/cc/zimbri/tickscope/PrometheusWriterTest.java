@@ -11,6 +11,8 @@ package cc.zimbri.tickscope;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -47,5 +49,27 @@ class PrometheusWriterTest {
         assertTrue(rendered.contains("platform=\"folia\""));
         assertTrue(!rendered.contains("# TYPE mc_mspt_ms"));
         assertTrue(!rendered.contains("# TYPE mc_tps"));
+    }
+
+    @Test
+    void rendersRegionalFoliaTpsAndMspt() {
+        Snapshot empty = Snapshot.empty("folia", "1", "Canvas", "25", "folia");
+        Snapshot snapshot = new Snapshot(empty.serverId(), empty.tickScopeVersion(),
+                empty.paperVersion(), empty.javaVersion(), empty.platform(),
+                empty.collectionSeconds(), empty.entityCollectionSeconds(), empty.ticks(),
+                empty.tps(), empty.playersOnline(), empty.playersMax(), empty.plugins(),
+                empty.pingAvgMs(), empty.pingMaxMs(), empty.worlds(), empty.entityTypes(),
+                List.of(new Snapshot.RegionTps("15s", 2, 19.5, 19.75, 20.0)),
+                List.of(new Snapshot.RegionMspt("15s", 2, 4.5, 5.25, 6.0)),
+                empty.jvm(), empty.proc(), empty.events());
+
+        String rendered = PrometheusWriter.render(snapshot);
+
+        assertTrue(rendered.contains(
+                "mc_folia_region_tps{server=\"folia\",window=\"15s\",statistic=\"avg\"} 19.7500\n"));
+        assertTrue(rendered.contains(
+                "mc_folia_region_mspt_ms{server=\"folia\",window=\"15s\",statistic=\"avg\"} 5.2500\n"));
+        assertTrue(rendered.contains(
+                "mc_folia_region_mspt_samples{server=\"folia\",window=\"15s\"} 2\n"));
     }
 }

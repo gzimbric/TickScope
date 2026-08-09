@@ -107,7 +107,8 @@ final class MetricsCollector {
 
         // Folia has no single server tick. Publishing its global-region tick history as server
         // MSPT would be technically valid data with a misleading meaning, so those Paper-only
-        // series are deliberately absent. Region TPS is sampled separately at player locations.
+        // series are deliberately absent. Region TPS and MSPT are sampled separately at player
+        // locations when the server exposes the corresponding regional APIs.
         Snapshot.Ticks ticks = folia ? Snapshot.Ticks.EMPTY : summarise(Bukkit.getTickTimes());
         double[] tps = folia ? new double[0] : Bukkit.getTPS();
 
@@ -132,6 +133,7 @@ final class MetricsCollector {
                 Bukkit.getPluginManager().getPlugins().length,
                 playerSample.pingAvgMs(), playerSample.pingMaxMs(),
                 List.copyOf(worlds), entityTypes, playerSample.regionTps(),
+                playerSample.regionMspt(),
                 jvm, proc, eventCounts);
     }
 
@@ -146,7 +148,7 @@ final class MetricsCollector {
             pingMax = Math.max(pingMax, ping);
         }
         return new PlayerSample(online, online == 0 ? 0d : (double) pingSum / online,
-                pingMax, List.of());
+                pingMax, List.of(), List.of());
     }
 
     /** Separate cadence: this one is O(entities), unlike everything in collect(). */
@@ -232,11 +234,14 @@ final class MetricsCollector {
     }
 
     record PlayerSample(int online, double pingAvgMs, int pingMaxMs,
-                        List<Snapshot.RegionTps> regionTps) {
-        static final PlayerSample EMPTY = new PlayerSample(0, 0d, 0, List.of());
+                        List<Snapshot.RegionTps> regionTps,
+                        List<Snapshot.RegionMspt> regionMspt) {
+        static final PlayerSample EMPTY = new PlayerSample(
+                0, 0d, 0, List.of(), List.of());
 
         PlayerSample {
             regionTps = List.copyOf(regionTps);
+            regionMspt = List.copyOf(regionMspt);
         }
     }
 

@@ -58,18 +58,38 @@ final class PrometheusWriter {
                 b.append("mc_tps{server=\"").append(srv).append("\",window=\"")
                  .append(windows[i]).append("\"} ").append(num(tps[i])).append('\n');
             }
-        } else if (!s.regionTps().isEmpty()) {
-            help(b, "mc_folia_region_tps", "gauge",
-                    "TPS across player-active Folia region samples");
-            help(b, "mc_folia_region_tps_samples", "gauge",
-                    "Player-location samples in the Folia TPS summary");
-            for (Snapshot.RegionTps region : s.regionTps()) {
-                foliaTpsLine(b, srv, region.window(), "min", region.min());
-                foliaTpsLine(b, srv, region.window(), "avg", region.avg());
-                foliaTpsLine(b, srv, region.window(), "max", region.max());
-                b.append("mc_folia_region_tps_samples{server=\"").append(srv)
-                 .append("\",window=\"").append(region.window()).append("\"} ")
-                 .append(region.samples()).append('\n');
+        } else {
+            if (!s.regionTps().isEmpty()) {
+                help(b, "mc_folia_region_tps", "gauge",
+                        "TPS across player-active Folia region samples");
+                help(b, "mc_folia_region_tps_samples", "gauge",
+                        "Player-location samples in the Folia TPS summary");
+                for (Snapshot.RegionTps region : s.regionTps()) {
+                    foliaRegionLine(b, "mc_folia_region_tps", srv,
+                            region.window(), "min", region.min());
+                    foliaRegionLine(b, "mc_folia_region_tps", srv,
+                            region.window(), "avg", region.avg());
+                    foliaRegionLine(b, "mc_folia_region_tps", srv,
+                            region.window(), "max", region.max());
+                    foliaSamplesLine(b, "mc_folia_region_tps_samples", srv,
+                            region.window(), region.samples());
+                }
+            }
+            if (!s.regionMspt().isEmpty()) {
+                help(b, "mc_folia_region_mspt_ms", "gauge",
+                        "Average MSPT across player-active Folia region samples");
+                help(b, "mc_folia_region_mspt_samples", "gauge",
+                        "Player-location samples in the Folia MSPT summary");
+                for (Snapshot.RegionMspt region : s.regionMspt()) {
+                    foliaRegionLine(b, "mc_folia_region_mspt_ms", srv,
+                            region.window(), "min", region.min());
+                    foliaRegionLine(b, "mc_folia_region_mspt_ms", srv,
+                            region.window(), "avg", region.avg());
+                    foliaRegionLine(b, "mc_folia_region_mspt_ms", srv,
+                            region.window(), "max", region.max());
+                    foliaSamplesLine(b, "mc_folia_region_mspt_samples", srv,
+                            region.window(), region.samples());
+                }
             }
         }
 
@@ -186,11 +206,17 @@ final class PrometheusWriter {
          .append(esc(gc)).append("\"} ").append(num(v)).append('\n');
     }
 
-    private static void foliaTpsLine(StringBuilder b, String srv, String window,
-                                     String statistic, double value) {
-        b.append("mc_folia_region_tps{server=\"").append(srv).append("\",window=\"")
+    private static void foliaRegionLine(StringBuilder b, String name, String srv,
+                                        String window, String statistic, double value) {
+        b.append(name).append("{server=\"").append(srv).append("\",window=\"")
          .append(window).append("\",statistic=\"").append(statistic).append("\"} ")
          .append(num(value)).append('\n');
+    }
+
+    private static void foliaSamplesLine(StringBuilder b, String name, String srv,
+                                         String window, int samples) {
+        b.append(name).append("{server=\"").append(srv).append("\",window=\"")
+         .append(window).append("\"} ").append(samples).append('\n');
     }
 
     /** Locale.ROOT matters: a comma decimal separator would corrupt the exposition. */

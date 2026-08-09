@@ -23,7 +23,8 @@ mc_world_entities_by_type{world="world",type="chicken"} 35
 ## Highlights
 
 - Exact p50, p95, and p99 tick times from Paper's raw tick-duration window
-- Player-active regional TPS summaries on Folia and Folia-compatible forks such as Canvas
+- Player-active regional TPS and average MSPT summaries where the Folia-compatible server API
+  exposes them (including Canvas)
 - Per-world entities, entity types, tile entities, chunks, and players
 - JVM memory, threads, garbage collection, process CPU, and uptime
 - No runtime dependencies, outbound telemetry, database, or embedded framework
@@ -81,9 +82,11 @@ backend in a proxy network and assign each server a unique `server-id`.
 Paper exposes a single server tick, so TickScope publishes exact `mc_mspt_ms`, `mc_tick_samples`,
 and `mc_tps` series there. Folia has no truthful server-wide equivalent. On Folia, those series are
 intentionally absent and are replaced by `mc_folia_region_tps` summaries sampled at online player
-locations. Entity-by-type metrics are also disabled on Folia because a world-wide entity walk
-would cross region ownership boundaries. Other server, world, player, event, JVM, and process
-metrics remain available.
+locations. Servers exposing regional average tick times, including Canvas, also receive
+`mc_folia_region_mspt_ms`; this is average MSPT per player-active region rather than a global
+percentile. Entity-by-type metrics are disabled on Folia because a world-wide entity walk would
+cross region ownership boundaries. Other server, world, player, event, JVM, and process metrics
+remain available.
 
 ## Download and support
 
