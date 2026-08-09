@@ -11,10 +11,16 @@
 set -uo pipefail
 
 SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|\.example([:/]|$)'
+WIKI_DIR=${WIKI_DIR:-_wiki}
+SEARCH_PATHS=(README.md SECURITY.md pom.xml .github src/main/resources src/main/java assets/grafana)
+
+if [[ -d "$WIKI_DIR" ]]; then
+  SEARCH_PATHS+=("$WIKI_DIR")
+fi
 
 mapfile -t URLS < <(
   grep -rhoE 'https?://[^)"'"'"' <>]+' \
-       README.md pom.xml .github src/main/resources src/main/java 2>/dev/null \
+       "${SEARCH_PATHS[@]}" 2>/dev/null \
   | sed -e 's/[].,;:)`]*$//' -e 's/\\$//' \
   | grep -vE "$SKIP" \
   | sort -u
@@ -42,4 +48,6 @@ if [ "$fail" -ne 0 ]; then
 else
   echo "All links resolve."
 fi
+
+python3 .github/scripts/check-markdown-links.py README.md SECURITY.md "$WIKI_DIR" || fail=1
 exit "$fail"

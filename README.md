@@ -47,6 +47,14 @@ The default endpoint is open but bound to loopback. When Minecraft runs in Docke
 before changing the bind address. Configure bearer authentication and TLS whenever metrics cross
 a network you do not fully control.
 
+## Grafana dashboard
+
+<img src="assets/grafana/dashboard-preview.png" width="900" alt="TickScope Grafana dashboard showing players, TPS, exact MSPT percentiles, and heap use">
+
+[Download the dashboard JSON](assets/grafana/tickscope-dashboard.json), import it into Grafana,
+and select the Prometheus data source that scrapes TickScope. A built-in server selector supports
+one Paper server or a network of independently labeled backends.
+
 ## Documentation
 
 The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickScope/wiki):
@@ -60,6 +68,7 @@ The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickSc
 | [Design and privacy](https://github.com/gzimbric/TickScope/wiki/Design-and-Privacy) | Architecture, collection cost, and security model |
 | [Troubleshooting](https://github.com/gzimbric/TickScope/wiki/Troubleshooting) | Compatibility, missing series, and lag diagnosis |
 | [Development and releases](https://github.com/gzimbric/TickScope/wiki/Development-and-Releases) | Building, testing, releases, and support |
+| [Metric stability](https://github.com/gzimbric/TickScope/wiki/Metric-Stability) | Compatibility guarantees for names, labels, and semantics |
 
 ## Compatibility
 
@@ -74,6 +83,7 @@ assign each server a unique `server-id`.
 - [Report a bug](https://github.com/gzimbric/TickScope/issues/new?template=bug_report.yml)
 - [Request a feature](https://github.com/gzimbric/TickScope/issues/new?template=feature_request.yml)
 - [Ask a question](https://github.com/gzimbric/TickScope/discussions)
+- [Report a security issue privately](https://github.com/gzimbric/TickScope/security/advisories/new)
 
 TickScope is maintained by [Gabe Zimbric](https://github.com/gzimbric) and licensed under
 [GPL-3.0-or-later](LICENSE).

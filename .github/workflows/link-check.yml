@@ -1,12 +1,20 @@
 name: link-check
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "**.md"
+      - ".github/**"
+      - "assets/grafana/**"
+      - "src/main/resources/**"
   schedule:
     - cron: "0 7 * * 1"    # Mondays, 07:00 UTC
   pull_request:
     paths:
       - "**.md"
       - ".github/**"
+      - "assets/grafana/**"
       - "src/main/resources/**"
   workflow_dispatch:
 
@@ -19,6 +27,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out the wiki
+        env:
+          WIKI_REPOSITORY: ${{ github.event.pull_request.base.repo.full_name || github.repository }}
+        run: git clone --depth 1 "https://github.com/${WIKI_REPOSITORY}.wiki.git" _wiki
 
       - name: Check links
         id: check
@@ -33,9 +46,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          broken=$(grep '^  BROKEN' /tmp/links.log || true)
+          # shellcheck disable=SC2016
+          broken=$(tail -c 12000 /tmp/links.log)
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" \
                        --label link-rot --state open --limit 1 --json number --jq '.[0].number')
+          # The Markdown fence is intentionally literal in the printf format.
+          # shellcheck disable=SC2016
           body=$(printf 'The weekly link check found URLs that no longer resolve.\n\n```\n%s\n```\n\n[Run](%s/%s/actions/runs/%s)\n' \
                    "$broken" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID")
           if [ -n "$existing" ]; then

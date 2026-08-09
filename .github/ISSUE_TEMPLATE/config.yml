@@ -6,10 +6,10 @@ contact_links:
       Not sure whether something is a bug? Ask here first — scrape configs,
       Grafana queries and "is this normal?" questions are all welcome.
   - name: Documentation
-    url: https://github.com/gzimbric/TickScope#readme
+    url: https://github.com/gzimbric/TickScope/wiki
     about: >
-      Installation, the full metrics reference, the Docker bind-address gotcha,
-      and an FAQ covering TPS versus MSPT.
+      Installation, configuration, the full metrics reference, Docker notes,
+      and troubleshooting.
   - name: Modrinth page
     url: https://modrinth.com/plugin/tickscope
     about: Downloads, changelogs and version compatibility.
