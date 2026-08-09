@@ -30,10 +30,12 @@ final class FoliaPlayerSampler {
 
     private final PlatformScheduler scheduler;
     private final Method getRegionTps;
+    private final Method getRegionMspt;
 
     FoliaPlayerSampler(PlatformScheduler scheduler) {
         this.scheduler = scheduler;
-        this.getRegionTps = findRegionTps();
+        this.getRegionTps = findRegionMethod("getRegionTPS");
+        this.getRegionMspt = findRegionMethod("getRegionAverageTickTimes");
     }
 
     void sample(Collection<? extends Player> currentPlayers,
@@ -50,7 +52,8 @@ final class FoliaPlayerSampler {
             Runnable retired = () -> accumulator.retired(finished);
             try {
                 boolean accepted = scheduler.executeFor(player,
-                        () -> accumulator.record(player, readRegionTps(player), finished), retired);
+                        () -> accumulator.record(player, readRegionMetrics(player), finished),
+                        retired);
                 if (!accepted) retired.run();
             } catch (RuntimeException e) {
                 retired.run();
@@ -58,22 +61,30 @@ final class FoliaPlayerSampler {
         }
     }
 
-    private double[] readRegionTps(Player player) {
-        if (getRegionTps == null) return null;
+    private RegionMetrics readRegionMetrics(Player player) {
+        Location location = player.getLocation();
+        return new RegionMetrics(invokeRegionMethod(getRegionTps, player, location),
+                invokeRegionMethod(getRegionMspt, player, location));
+    }
+
+    private static double[] invokeRegionMethod(Method method, Player player, Location location) {
+        if (method == null) return null;
         try {
-            return (double[]) getRegionTps.invoke(player.getServer(), player.getLocation());
+            return (double[]) method.invoke(player.getServer(), location);
         } catch (IllegalAccessException | InvocationTargetException e) {
             return null;
         }
     }
 
-    private static Method findRegionTps() {
+    private static Method findRegionMethod(String name) {
         try {
-            return Server.class.getMethod("getRegionTPS", Location.class);
+            return Server.class.getMethod(name, Location.class);
         } catch (NoSuchMethodException e) {
             return null;
         }
     }
+
+    private record RegionMetrics(double[] tps, double[] mspt) {}
 
     private static final class Accumulator {
         private final int players;
@@ -84,6 +95,8 @@ final class FoliaPlayerSampler {
         private final AtomicInteger pingMax = new AtomicInteger();
         private final double[][] regionTps;
         private final boolean[][] regionPresent;
+        private final double[][] regionMspt;
+        private final boolean[][] regionMsptPresent;
         private final Consumer<MetricsCollector.PlayerSample> completed;
 
         private Accumulator(int players, Consumer<MetricsCollector.PlayerSample> completed) {
@@ -91,10 +104,12 @@ final class FoliaPlayerSampler {
             this.remaining = new AtomicInteger(players);
             this.regionTps = new double[WINDOWS.length][players];
             this.regionPresent = new boolean[WINDOWS.length][players];
+            this.regionMspt = new double[WINDOWS.length][players];
+            this.regionMsptPresent = new boolean[WINDOWS.length][players];
             this.completed = completed;
         }
 
-        private void record(Player player, double[] tps, AtomicBoolean finished) {
+        private void record(Player player, RegionMetrics metrics, AtomicBoolean finished) {
             if (!finished.compareAndSet(false, true)) return;
             try {
                 int slot = nextSlot.getAndIncrement();
@@ -102,10 +117,16 @@ final class FoliaPlayerSampler {
                 pingSum.addAndGet(ping);
                 pingMax.accumulateAndGet(ping, Math::max);
                 pingSamples.incrementAndGet();
-                if (tps != null) {
-                    for (int i = 0; i < WINDOWS.length && i < tps.length; i++) {
-                        regionTps[i][slot] = tps[i];
+                if (metrics.tps() != null) {
+                    for (int i = 0; i < WINDOWS.length && i < metrics.tps().length; i++) {
+                        regionTps[i][slot] = metrics.tps()[i];
                         regionPresent[i][slot] = true;
+                    }
+                }
+                if (metrics.mspt() != null) {
+                    for (int i = 0; i < WINDOWS.length && i < metrics.mspt().length; i++) {
+                        regionMspt[i][slot] = metrics.mspt()[i];
+                        regionMsptPresent[i][slot] = true;
                     }
                 }
             } finally {
@@ -120,6 +141,7 @@ final class FoliaPlayerSampler {
         private void finishOne() {
             if (remaining.decrementAndGet() != 0) return;
             List<Snapshot.RegionTps> regions = new ArrayList<>();
+            List<Snapshot.RegionMspt> msptRegions = new ArrayList<>();
             for (int window = 0; window < WINDOWS.length; window++) {
                 int count = 0;
                 double sum = 0;
@@ -137,11 +159,28 @@ final class FoliaPlayerSampler {
                     regions.add(new Snapshot.RegionTps(
                             WINDOWS[window], count, min, sum / count, max));
                 }
+
+                count = 0;
+                sum = 0;
+                min = Double.POSITIVE_INFINITY;
+                max = Double.NEGATIVE_INFINITY;
+                for (int player = 0; player < players; player++) {
+                    if (!regionMsptPresent[window][player]) continue;
+                    double value = regionMspt[window][player];
+                    count++;
+                    sum += value;
+                    min = Math.min(min, value);
+                    max = Math.max(max, value);
+                }
+                if (count > 0) {
+                    msptRegions.add(new Snapshot.RegionMspt(
+                            WINDOWS[window], count, min, sum / count, max));
+                }
             }
             int successfulPings = pingSamples.get();
             completed.accept(new MetricsCollector.PlayerSample(players,
                     successfulPings == 0 ? 0d : (double) pingSum.get() / successfulPings,
-                    pingMax.get(), List.copyOf(regions)));
+                    pingMax.get(), List.copyOf(regions), List.copyOf(msptRegions)));
         }
     }
 }

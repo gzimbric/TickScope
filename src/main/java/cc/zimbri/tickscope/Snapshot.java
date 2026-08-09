@@ -44,6 +44,7 @@ record Snapshot(
         List<WorldStat> worlds,
         List<TypeCount> entityTypes,
         List<RegionTps> regionTps,
+        List<RegionMspt> regionMspt,
         Jvm jvm,
         Proc proc,
         Map<String, Long> events) {
@@ -53,6 +54,7 @@ record Snapshot(
         worlds = List.copyOf(worlds);
         entityTypes = List.copyOf(entityTypes);
         regionTps = List.copyOf(regionTps);
+        regionMspt = List.copyOf(regionMspt);
         events = Collections.unmodifiableMap(new LinkedHashMap<>(events));
     }
 
@@ -72,6 +74,9 @@ record Snapshot(
 
     /** Folia TPS summaries sampled at player-owned regions; samples may share a region. */
     record RegionTps(String window, int samples, double min, double avg, double max) {}
+
+    /** Folia MSPT summaries sampled at player-owned regions; samples may share a region. */
+    record RegionMspt(String window, int samples, double min, double avg, double max) {}
 
     record Gc(String name, long count, double seconds) {}
 
@@ -93,7 +98,7 @@ record Snapshot(
         return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion,
                 platform,
                 0d, 0d, Ticks.EMPTY, new double[]{0, 0, 0},
-                0, 0, 0, 0d, 0, List.of(), List.of(), List.of(),
+                0, 0, 0, 0d, 0, List.of(), List.of(), List.of(), List.of(),
                 new Jvm(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, List.of()),
                 new Proc(0, 0, 0, 0, 0), Map.of());
     }
