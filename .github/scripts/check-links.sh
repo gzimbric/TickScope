@@ -6,11 +6,12 @@
 #   - maven.apache.org/POM    an XML namespace identifier, not a link
 #   - www.w3.org/             ditto
 #   - *.example               RFC 2606 reserves this for documentation
+#   - www.gnu.org/licenses    intermittently rejects GitHub-hosted runners
 #
 # Runs in CI weekly, and by hand: bash .github/scripts/check-links.sh
 set -uo pipefail
 
-SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|api\.modrinth\.com/v2$|\.example([:/]|$)'
+SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|www\.gnu\.org/licenses|api\.modrinth\.com/v2$|\.example([:/]|$)'
 WIKI_DIR=${WIKI_DIR:-_wiki}
 SEARCH_PATHS=(README.md SECURITY.md pom.xml .github src/main/resources src/main/java assets/grafana)
 
