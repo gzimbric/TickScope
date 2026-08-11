@@ -27,6 +27,7 @@ import java.util.function.Consumer;
 final class FoliaPlayerSampler {
 
     private static final String[] WINDOWS = {"5s", "15s", "1m", "5m", "15m"};
+    private static final double MILLIS_PER_SECOND = 1_000d;
 
     private final PlatformScheduler scheduler;
     private final Method getRegionTps;
@@ -141,7 +142,7 @@ final class FoliaPlayerSampler {
         private void finishOne() {
             if (remaining.decrementAndGet() != 0) return;
             List<Snapshot.RegionTps> regions = new ArrayList<>();
-            List<Snapshot.RegionMspt> msptRegions = new ArrayList<>();
+            List<Snapshot.RegionTickDuration> tickDurations = new ArrayList<>();
             for (int window = 0; window < WINDOWS.length; window++) {
                 int count = 0;
                 double sum = 0;
@@ -173,14 +174,19 @@ final class FoliaPlayerSampler {
                     max = Math.max(max, value);
                 }
                 if (count > 0) {
-                    msptRegions.add(new Snapshot.RegionMspt(
-                            WINDOWS[window], count, min, sum / count, max));
+                    tickDurations.add(new Snapshot.RegionTickDuration(
+                            WINDOWS[window], count,
+                            min / MILLIS_PER_SECOND,
+                            sum / count / MILLIS_PER_SECOND,
+                            max / MILLIS_PER_SECOND));
                 }
             }
             int successfulPings = pingSamples.get();
             completed.accept(new MetricsCollector.PlayerSample(players,
-                    successfulPings == 0 ? 0d : (double) pingSum.get() / successfulPings,
-                    pingMax.get(), List.copyOf(regions), List.copyOf(msptRegions)));
+                    successfulPings == 0 ? 0d
+                            : (double) pingSum.get() / successfulPings / MILLIS_PER_SECOND,
+                    pingMax.get() / MILLIS_PER_SECOND,
+                    List.copyOf(regions), List.copyOf(tickDurations)));
         }
     }
 }

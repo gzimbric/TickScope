@@ -47,7 +47,7 @@ import java.util.Map;
 final class MetricsCollector {
 
     private static final double NANOS_PER_SEC = 1_000_000_000d;
-    private static final double NANOS_PER_MS = 1_000_000d;
+    private static final double MILLIS_PER_SECOND = 1_000d;
 
     private final String serverId;
     private final String tickScopeVersion;
@@ -131,9 +131,9 @@ final class MetricsCollector {
                 collectionSeconds, entityCollectionSeconds, ticks, tps,
                 playerSample.online(), Bukkit.getMaxPlayers(),
                 Bukkit.getPluginManager().getPlugins().length,
-                playerSample.pingAvgMs(), playerSample.pingMaxMs(),
+                playerSample.pingAverageSeconds(), playerSample.pingMaximumSeconds(),
                 List.copyOf(worlds), entityTypes, playerSample.regionTps(),
-                playerSample.regionMspt(),
+                playerSample.regionTickDurations(),
                 jvm, proc, eventCounts);
     }
 
@@ -147,8 +147,9 @@ final class MetricsCollector {
             pingSum += ping;
             pingMax = Math.max(pingMax, ping);
         }
-        return new PlayerSample(online, online == 0 ? 0d : (double) pingSum / online,
-                pingMax, List.of(), List.of());
+        return new PlayerSample(online,
+                online == 0 ? 0d : (double) pingSum / online / MILLIS_PER_SECOND,
+                pingMax / MILLIS_PER_SECOND, List.of(), List.of());
     }
 
     /** Separate cadence: this one is O(entities), unlike everything in collect(). */
@@ -210,12 +211,12 @@ final class MetricsCollector {
         double sum = 0;
         for (long x : v) sum += x;
         return new Snapshot.Ticks(
-                sum / n / NANOS_PER_MS,
-                v[0] / NANOS_PER_MS,
-                v[n - 1] / NANOS_PER_MS,
-                quantile(v, 0.50) / NANOS_PER_MS,
-                quantile(v, 0.95) / NANOS_PER_MS,
-                quantile(v, 0.99) / NANOS_PER_MS,
+                sum / n / NANOS_PER_SEC,
+                v[0] / NANOS_PER_SEC,
+                v[n - 1] / NANOS_PER_SEC,
+                quantile(v, 0.50) / NANOS_PER_SEC,
+                quantile(v, 0.95) / NANOS_PER_SEC,
+                quantile(v, 0.99) / NANOS_PER_SEC,
                 n);
     }
 
@@ -233,15 +234,15 @@ final class MetricsCollector {
         return m;
     }
 
-    record PlayerSample(int online, double pingAvgMs, int pingMaxMs,
+    record PlayerSample(int online, double pingAverageSeconds, double pingMaximumSeconds,
                         List<Snapshot.RegionTps> regionTps,
-                        List<Snapshot.RegionMspt> regionMspt) {
+                        List<Snapshot.RegionTickDuration> regionTickDurations) {
         static final PlayerSample EMPTY = new PlayerSample(
                 0, 0d, 0, List.of(), List.of());
 
         PlayerSample {
             regionTps = List.copyOf(regionTps);
-            regionMspt = List.copyOf(regionMspt);
+            regionTickDurations = List.copyOf(regionTickDurations);
         }
     }
 

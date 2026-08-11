@@ -130,14 +130,17 @@ public final class TickScope extends JavaPlugin {
                 sender.sendMessage("  auth: " + (active.token.isEmpty() ? "none" : "required"));
                 if (scheduler.isFolia()) {
                     sender.sendMessage("  tick-metrics: regional TPS"
-                            + (s.regionMspt().isEmpty() ? " (regional MSPT unavailable)"
+                            + (s.regionTickDurations().isEmpty() ? " (regional MSPT unavailable)"
                             : " and average MSPT"));
                     sender.sendMessage("  region-tps-windows: " + s.regionTps().size());
-                    sender.sendMessage("  region-mspt-windows: " + s.regionMspt().size());
+                    sender.sendMessage("  region-mspt-windows: "
+                            + s.regionTickDurations().size());
                 } else {
                     sender.sendMessage(String.format(
                             "  mspt avg %.2f  p95 %.2f  max %.2f  (%d samples)",
-                            s.ticks().avgMs(), s.ticks().p95Ms(), s.ticks().maxMs(),
+                            s.ticks().averageSeconds() * 1000,
+                            s.ticks().p95Seconds() * 1000,
+                            s.ticks().maximumSeconds() * 1000,
                             s.ticks().samples()));
                 }
                 sender.sendMessage(String.format(

@@ -17,7 +17,6 @@
  */
 package cc.zimbri.tickscope;
 
-import java.util.Locale;
 import java.util.Map;
 
 /** Renders a {@link Snapshot} as Prometheus text exposition format 0.0.4. */
@@ -41,12 +40,17 @@ final class PrometheusWriter {
         // Percentiles come from Paper's raw per-tick nanosecond array, so these are
         // exact over the sample window rather than a bucketed estimate.
         if (!s.platform().equals("folia")) {
-            help(b, "mc_mspt_ms", "gauge", "Milliseconds per tick. One tick is 50ms.");
-            for (var q : new Object[][]{{"avg", s.ticks().avgMs()}, {"min", s.ticks().minMs()},
-                    {"max", s.ticks().maxMs()}, {"p50", s.ticks().p50Ms()},
-                    {"p95", s.ticks().p95Ms()}, {"p99", s.ticks().p99Ms()}}) {
-                b.append("mc_mspt_ms{server=\"").append(srv).append("\",quantile=\"")
-                 .append(q[0]).append("\"} ").append(num((double) q[1])).append('\n');
+            help(b, "mc_tick_duration_seconds", "gauge",
+                    "Duration of one server tick in seconds");
+            for (var value : new Object[][]{
+                    {"avg", s.ticks().averageSeconds()},
+                    {"min", s.ticks().minimumSeconds()},
+                    {"max", s.ticks().maximumSeconds()},
+                    {"p50", s.ticks().p50Seconds()},
+                    {"p95", s.ticks().p95Seconds()},
+                    {"p99", s.ticks().p99Seconds()}}) {
+                statisticLine(b, "mc_tick_duration_seconds", srv,
+                        (String) value[0], (double) value[1]);
             }
             gauge(b, "mc_tick_samples", "Ticks in the current sample window", srv,
                     s.ticks().samples());
@@ -75,19 +79,19 @@ final class PrometheusWriter {
                             region.window(), region.samples());
                 }
             }
-            if (!s.regionMspt().isEmpty()) {
-                help(b, "mc_folia_region_mspt_ms", "gauge",
-                        "Average MSPT across player-active Folia region samples");
-                help(b, "mc_folia_region_mspt_samples", "gauge",
-                        "Player-location samples in the Folia MSPT summary");
-                for (Snapshot.RegionMspt region : s.regionMspt()) {
-                    foliaRegionLine(b, "mc_folia_region_mspt_ms", srv,
-                            region.window(), "min", region.min());
-                    foliaRegionLine(b, "mc_folia_region_mspt_ms", srv,
-                            region.window(), "avg", region.avg());
-                    foliaRegionLine(b, "mc_folia_region_mspt_ms", srv,
-                            region.window(), "max", region.max());
-                    foliaSamplesLine(b, "mc_folia_region_mspt_samples", srv,
+            if (!s.regionTickDurations().isEmpty()) {
+                help(b, "mc_folia_region_tick_duration_seconds", "gauge",
+                        "Average tick duration across player-active Folia region samples");
+                help(b, "mc_folia_region_tick_duration_samples", "gauge",
+                        "Player-location samples in the Folia tick-duration summary");
+                for (Snapshot.RegionTickDuration region : s.regionTickDurations()) {
+                    foliaRegionLine(b, "mc_folia_region_tick_duration_seconds", srv,
+                            region.window(), "min", region.minimumSeconds());
+                    foliaRegionLine(b, "mc_folia_region_tick_duration_seconds", srv,
+                            region.window(), "avg", region.averageSeconds());
+                    foliaRegionLine(b, "mc_folia_region_tick_duration_seconds", srv,
+                            region.window(), "max", region.maximumSeconds());
+                    foliaSamplesLine(b, "mc_folia_region_tick_duration_samples", srv,
                             region.window(), region.samples());
                 }
             }
@@ -97,8 +101,9 @@ final class PrometheusWriter {
         gauge(b, "mc_players_online", "Players currently connected", srv, s.playersOnline());
         gauge(b, "mc_players_max", "Configured player slots", srv, s.playersMax());
         gauge(b, "mc_plugins", "Loaded plugins", srv, s.plugins());
-        gauge(b, "mc_player_ping_avg_ms", "Mean player ping", srv, s.pingAvgMs());
-        gauge(b, "mc_player_ping_max_ms", "Worst player ping", srv, s.pingMaxMs());
+        help(b, "mc_player_ping_seconds", "gauge", "Player network latency in seconds");
+        statisticLine(b, "mc_player_ping_seconds", srv, "avg", s.pingAverageSeconds());
+        statisticLine(b, "mc_player_ping_seconds", srv, "max", s.pingMaximumSeconds());
 
         // ---- per world ------------------------------------------------------
         if (!s.worlds().isEmpty()) {
@@ -124,18 +129,18 @@ final class PrometheusWriter {
 
         // ---- jvm ------------------------------------------------------------
         Snapshot.Jvm j = s.jvm();
-        help(b, "mc_jvm_memory_bytes_used", "gauge", "JVM memory in use");
-        areaLine(b, "mc_jvm_memory_bytes_used", srv, "heap", j.heapUsed());
-        areaLine(b, "mc_jvm_memory_bytes_used", srv, "nonheap", j.nonHeapUsed());
-        help(b, "mc_jvm_memory_bytes_committed", "gauge", "JVM memory committed by the OS");
-        areaLine(b, "mc_jvm_memory_bytes_committed", srv, "heap", j.heapCommitted());
-        areaLine(b, "mc_jvm_memory_bytes_committed", srv, "nonheap", j.nonHeapCommitted());
-        help(b, "mc_jvm_memory_bytes_max", "gauge", "JVM memory ceiling (-1 when unbounded)");
-        areaLine(b, "mc_jvm_memory_bytes_max", srv, "heap", j.heapMax());
-        areaLine(b, "mc_jvm_memory_bytes_max", srv, "nonheap", j.nonHeapMax());
-        help(b, "mc_jvm_memory_bytes_init", "gauge", "JVM memory requested at startup");
-        areaLine(b, "mc_jvm_memory_bytes_init", srv, "heap", j.heapInit());
-        areaLine(b, "mc_jvm_memory_bytes_init", srv, "nonheap", j.nonHeapInit());
+        help(b, "mc_jvm_memory_used_bytes", "gauge", "JVM memory in use");
+        areaLine(b, "mc_jvm_memory_used_bytes", srv, "heap", j.heapUsed());
+        areaLine(b, "mc_jvm_memory_used_bytes", srv, "nonheap", j.nonHeapUsed());
+        help(b, "mc_jvm_memory_committed_bytes", "gauge", "JVM memory committed by the OS");
+        areaLine(b, "mc_jvm_memory_committed_bytes", srv, "heap", j.heapCommitted());
+        areaLine(b, "mc_jvm_memory_committed_bytes", srv, "nonheap", j.nonHeapCommitted());
+        help(b, "mc_jvm_memory_max_bytes", "gauge", "JVM memory ceiling (-1 when unbounded)");
+        areaLine(b, "mc_jvm_memory_max_bytes", srv, "heap", j.heapMax());
+        areaLine(b, "mc_jvm_memory_max_bytes", srv, "nonheap", j.nonHeapMax());
+        help(b, "mc_jvm_memory_init_bytes", "gauge", "JVM memory requested at startup");
+        areaLine(b, "mc_jvm_memory_init_bytes", srv, "heap", j.heapInit());
+        areaLine(b, "mc_jvm_memory_init_bytes", srv, "nonheap", j.nonHeapInit());
 
         gauge(b, "mc_jvm_threads_current", "Live threads", srv, j.threadsCurrent());
         gauge(b, "mc_jvm_threads_daemon", "Live daemon threads", srv, j.threadsDaemon());
@@ -196,6 +201,12 @@ final class PrometheusWriter {
          .append(esc(world)).append("\"} ").append(num(v)).append('\n');
     }
 
+    private static void statisticLine(StringBuilder b, String name, String srv,
+                                      String statistic, double value) {
+        b.append(name).append("{server=\"").append(srv).append("\",statistic=\"")
+         .append(statistic).append("\"} ").append(num(value)).append('\n');
+    }
+
     private static void areaLine(StringBuilder b, String name, String srv, String area, double v) {
         b.append(name).append("{server=\"").append(srv).append("\",area=\"")
          .append(area).append("\"} ").append(num(v)).append('\n');
@@ -219,12 +230,15 @@ final class PrometheusWriter {
          .append(window).append("\"} ").append(samples).append('\n');
     }
 
-    /** Locale.ROOT matters: a comma decimal separator would corrupt the exposition. */
+    /** Double.toString always uses a period and preserves enough precision to round-trip. */
     private static String num(double v) {
+        if (Double.isNaN(v)) return "NaN";
+        if (v == Double.POSITIVE_INFINITY) return "+Inf";
+        if (v == Double.NEGATIVE_INFINITY) return "-Inf";
         if (v == Math.rint(v) && !Double.isInfinite(v) && Math.abs(v) < 1e15) {
             return Long.toString((long) v);
         }
-        return String.format(Locale.ROOT, "%.4f", v);
+        return Double.toString(v);
     }
 
     private static String esc(String s) {

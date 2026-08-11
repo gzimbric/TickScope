@@ -14,7 +14,7 @@ dependency-free plugin exposes tick health, players, per-world counters, JVM and
 and player event counters for dashboards in Grafana.
 
 ```text
-mc_mspt_ms{quantile="p99"} 21.6336
+mc_tick_duration_seconds{statistic="p99"} 0.0216
 mc_tps{window="1m"} 20.0
 mc_players_online 4
 mc_world_entities_by_type{world="world",type="chicken"} 35
@@ -79,12 +79,12 @@ Paper 1.18.2+, Paper-compatible Purpur servers, Folia, and Folia-compatible Canv
 supported. Spigot, Bukkit, Velocity, and BungeeCord are not supported. Install TickScope on each
 backend in a proxy network and assign each server a unique `server-id`.
 
-Paper exposes a single server tick, so TickScope publishes exact `mc_mspt_ms`, `mc_tick_samples`,
-and `mc_tps` series there. Folia has no truthful server-wide equivalent. On Folia, those series are
+Paper exposes a single server tick, so TickScope publishes exact `mc_tick_duration_seconds`,
+`mc_tick_samples`, and `mc_tps` series there. Folia has no truthful server-wide equivalent. On Folia, those series are
 intentionally absent and are replaced by `mc_folia_region_tps` summaries sampled at online player
 locations. Servers exposing regional average tick times, including Canvas, also receive
-`mc_folia_region_mspt_ms`; this is average MSPT per player-active region rather than a global
-percentile. Entity-by-type metrics are disabled on Folia because a world-wide entity walk would
+`mc_folia_region_tick_duration_seconds`; this is average tick duration per player-active region
+rather than a global percentile. Entity-by-type metrics are disabled on Folia because a world-wide entity walk would
 cross region ownership boundaries. Other server, world, player, event, JVM, and process metrics
 remain available.
 

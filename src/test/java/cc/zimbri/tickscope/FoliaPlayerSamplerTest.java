@@ -61,10 +61,10 @@ class FoliaPlayerSamplerTest {
         assertNotNull(sample);
         assertEquals(1, completions.get());
         assertEquals(2, sample.online());
-        assertEquals(12d, sample.pingAvgMs());
-        assertEquals(12, sample.pingMaxMs());
+        assertEquals(0.012, sample.pingAverageSeconds());
+        assertEquals(0.012, sample.pingMaximumSeconds());
         assertTrue(sample.regionTps().isEmpty());
-        assertTrue(sample.regionMspt().isEmpty());
+        assertTrue(sample.regionTickDurations().isEmpty());
 
         scheduler.pending.get(1).retired.run();
         scheduler.pending.get(1).task.run();
@@ -100,10 +100,10 @@ class FoliaPlayerSamplerTest {
         MetricsCollector.PlayerSample sample = result.get();
         assertNotNull(sample);
         assertEquals(2, sample.online());
-        assertEquals(0d, sample.pingAvgMs());
-        assertEquals(0, sample.pingMaxMs());
+        assertEquals(0d, sample.pingAverageSeconds());
+        assertEquals(0d, sample.pingMaximumSeconds());
         assertTrue(sample.regionTps().isEmpty());
-        assertTrue(sample.regionMspt().isEmpty());
+        assertTrue(sample.regionTickDurations().isEmpty());
     }
 
     private static Player player(int ping) {

@@ -21,12 +21,12 @@ class MetricsCollectorTest {
                 4_000_000, 0, 2_000_000, 1_000_000, 3_000_000
         });
 
-        assertEquals(2.5, ticks.avgMs());
-        assertEquals(1.0, ticks.minMs());
-        assertEquals(4.0, ticks.maxMs());
-        assertEquals(2.0, ticks.p50Ms());
-        assertEquals(4.0, ticks.p95Ms());
-        assertEquals(4.0, ticks.p99Ms());
+        assertEquals(0.0025, ticks.averageSeconds());
+        assertEquals(0.001, ticks.minimumSeconds());
+        assertEquals(0.004, ticks.maximumSeconds());
+        assertEquals(0.002, ticks.p50Seconds());
+        assertEquals(0.004, ticks.p95Seconds());
+        assertEquals(0.004, ticks.p99Seconds());
         assertEquals(4, ticks.samples());
     }
 
