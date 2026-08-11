@@ -2,7 +2,7 @@ name: link-check
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev, nextgen]
     paths:
       - "**.md"
       - ".github/**"
@@ -26,7 +26,7 @@ jobs:
   links:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check out the wiki
         env:
