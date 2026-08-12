@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Action versions on main went a whole generation stale and only surfaced as a runner
+  # deprecation warning. This keeps them current without anyone having to notice.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+
+  # The jar ships no third-party classes; this watches the build and test plugins only.
+  - package-ecosystem: maven
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
