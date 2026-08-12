@@ -1,13 +1,17 @@
 name: link-check
 
+# The path filters must stay in step with SEARCH_PATHS in check-links.sh; a link added
+# to a file the workflow does not watch would otherwise only be caught by the weekly run.
 on:
   push:
-    branches: [main]
+    branches: [main, dev, nextgen]
     paths:
       - "**.md"
       - ".github/**"
       - "assets/grafana/**"
       - "src/main/resources/**"
+      - "src/main/java/**"
+      - "pom.xml"
   schedule:
     - cron: "0 7 * * 1"    # Mondays, 07:00 UTC
   pull_request:
@@ -16,6 +20,8 @@ on:
       - ".github/**"
       - "assets/grafana/**"
       - "src/main/resources/**"
+      - "src/main/java/**"
+      - "pom.xml"
   workflow_dispatch:
 
 permissions:
@@ -26,7 +32,7 @@ jobs:
   links:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check out the wiki
         env:
