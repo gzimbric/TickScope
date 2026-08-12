@@ -25,6 +25,11 @@ configured bearer token prevents anonymous reads but does not encrypt the HTTP c
 Use a firewall or loopback-only binding for network isolation and a TLS-terminating reverse
 proxy whenever metrics cross an untrusted network.
 
+The endpoint enforces its own per-connection read and exchange deadlines, so a client that opens
+a connection and stops sending is disconnected rather than left holding a worker. A large enough
+burst of such connections can still delay a scrape until those deadlines expire, but the endpoint
+recovers without intervention.
+
 TickScope makes no outbound network connections and exports no player names. Metrics still reveal
 player activity and world-level entity and chunk information, so the endpoint should not be exposed
 to the public internet without appropriate controls.
