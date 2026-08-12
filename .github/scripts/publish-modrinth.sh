@@ -36,7 +36,7 @@ if [[ -z "$version_id" ]]; then
     --arg changelog "$changelog" \
     --argjson game_versions "$game_versions" \
     '{name:$name,version_number:$version,project_id:$project,changelog:$changelog,
-      version_type:"release",loaders:["paper","purpur"],game_versions:$game_versions,
+      version_type:"release",loaders:["paper","purpur","folia"],game_versions:$game_versions,
       featured:true,status:"listed",environment:"server_only",file_parts:["artifact"],
       primary_file:"artifact",dependencies:[]}')
 
