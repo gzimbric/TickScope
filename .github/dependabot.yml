@@ -14,3 +14,8 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
+    ignore:
+      # paper-api is pinned to the OLDEST supported API level on purpose. Compiling against
+      # 1.18.2 is exactly what lets one jar run from 1.18.2 through 26.2, so an "upgrade"
+      # here would quietly raise the version floor and drop most supported servers.
+      - dependency-name: "io.papermc.paper:paper-api"
