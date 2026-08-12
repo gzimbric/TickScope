@@ -84,9 +84,14 @@ and `mc_tps` series there. Folia has no truthful server-wide equivalent. On Foli
 intentionally absent and are replaced by `mc_folia_region_tps` summaries sampled at online player
 locations. Servers exposing regional average tick times, including Canvas, also receive
 `mc_folia_region_mspt_ms`; this is average MSPT per player-active region rather than a global
-percentile. Entity-by-type metrics are disabled on Folia because a world-wide entity walk would
-cross region ownership boundaries. Other server, world, player, event, JVM, and process metrics
-remain available.
+percentile. Per-world entity totals, tile-entity totals, and the entity-type breakdown are
+unavailable on Folia, because walking a world crosses region ownership boundaries; per-world chunk
+and player counts, and all other server, player, event, JVM, and process metrics, remain
+available.
+
+On Paper those three series come from a slower scan (`entity-types.interval-ticks`, 600 ticks by
+default) rather than from every collection, because counting tile entities walks the loaded chunks
+and, before Minecraft 26, counting entities walked every entity.
 
 ## Download and support
 

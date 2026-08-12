@@ -12,6 +12,7 @@ package cc.zimbri.tickscope;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MetricsCollectorTest {
 
@@ -28,6 +29,19 @@ class MetricsCollectorTest {
         assertEquals(4.0, ticks.p95Ms());
         assertEquals(4.0, ticks.p99Ms());
         assertEquals(4, ticks.samples());
+    }
+
+    @Test
+    void treatsUnavailableMxBeanReadingsAsMissingRatherThanZero() {
+        // These beans use -1 for "cannot supply this", and OpenJ9 returns it on the first
+        // CPU-load call, which is the one made moments after startup.
+        assertTrue(Double.isNaN(MetricsCollector.ratio(-1d)));
+        assertTrue(Double.isNaN(MetricsCollector.ratio(Double.NaN)));
+        assertTrue(Double.isNaN(MetricsCollector.cpuSeconds(-1L)));
+
+        assertEquals(0d, MetricsCollector.ratio(0d));
+        assertEquals(0.25d, MetricsCollector.ratio(0.25d));
+        assertEquals(2d, MetricsCollector.cpuSeconds(2_000_000_000L));
     }
 
     @Test

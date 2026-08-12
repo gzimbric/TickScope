@@ -97,19 +97,26 @@ final class PrometheusWriter {
         gauge(b, "mc_players_online", "Players currently connected", srv, s.playersOnline());
         gauge(b, "mc_players_max", "Configured player slots", srv, s.playersMax());
         gauge(b, "mc_plugins", "Loaded plugins", srv, s.plugins());
-        gauge(b, "mc_player_ping_avg_ms", "Mean player ping", srv, s.pingAvgMs());
-        gauge(b, "mc_player_ping_max_ms", "Worst player ping", srv, s.pingMaxMs());
+        if (s.pingSamples() > 0) {
+            gauge(b, "mc_player_ping_avg_ms", "Mean player ping", srv, s.pingAvgMs());
+            gauge(b, "mc_player_ping_max_ms", "Worst player ping", srv, s.pingMaxMs());
+        }
 
         // ---- per world ------------------------------------------------------
         if (!s.worlds().isEmpty()) {
-            help(b, "mc_world_entities", "gauge", "Entities per world");
-            for (Snapshot.WorldStat w : s.worlds()) worldLine(b, "mc_world_entities", srv, w.name(), w.entities());
-            help(b, "mc_world_tile_entities", "gauge", "Tile entities per world");
-            for (Snapshot.WorldStat w : s.worlds()) worldLine(b, "mc_world_tile_entities", srv, w.name(), w.tileEntities());
             help(b, "mc_world_chunks", "gauge", "Loaded chunks per world");
             for (Snapshot.WorldStat w : s.worlds()) worldLine(b, "mc_world_chunks", srv, w.name(), w.chunks());
             help(b, "mc_world_players", "gauge", "Players per world");
             for (Snapshot.WorldStat w : s.worlds()) worldLine(b, "mc_world_players", srv, w.name(), w.players());
+        }
+
+        // Sampled on the slower scan cadence, and absent on Folia where a world-wide walk
+        // would cross region ownership boundaries.
+        if (!s.worldTotals().isEmpty()) {
+            help(b, "mc_world_entities", "gauge", "Entities per world");
+            for (Snapshot.WorldTotals w : s.worldTotals()) worldLine(b, "mc_world_entities", srv, w.name(), w.entities());
+            help(b, "mc_world_tile_entities", "gauge", "Tile entities per world");
+            for (Snapshot.WorldTotals w : s.worldTotals()) worldLine(b, "mc_world_tile_entities", srv, w.name(), w.tileEntities());
         }
 
         if (!s.entityTypes().isEmpty()) {
@@ -147,14 +154,18 @@ final class PrometheusWriter {
             help(b, "mc_jvm_gc_collections_total", "counter", "GC cycles by collector");
             for (Snapshot.Gc g : j.gcs()) gcLine(b, "mc_jvm_gc_collections_total", srv, g.name(), g.count());
             help(b, "mc_jvm_gc_seconds_total", "counter", "Time spent in GC by collector");
-            for (Snapshot.Gc g : j.gcs()) gcLine(b, "mc_jvm_gc_seconds_total", srv, g.name(), g.seconds());
+            for (Snapshot.Gc g : j.gcs()) {
+                if (!Double.isNaN(g.seconds())) gcLine(b, "mc_jvm_gc_seconds_total", srv, g.name(), g.seconds());
+            }
         }
 
         // ---- process --------------------------------------------------------
         Snapshot.Proc p = s.proc();
-        gauge(b, "mc_process_cpu_load_ratio", "CPU load of the server process, 0-1", srv, p.processCpuRatio());
-        gauge(b, "mc_system_cpu_load_ratio", "CPU load of the whole host, 0-1", srv, p.systemCpuRatio());
-        counter(b, "mc_process_cpu_seconds_total", "CPU seconds consumed by the process", srv, p.processCpuSeconds());
+        optionalGauge(b, "mc_process_cpu_load_ratio", "CPU load of the server process, 0-1", srv, p.processCpuRatio());
+        optionalGauge(b, "mc_system_cpu_load_ratio",
+                "CPU load of the JVM's operating environment (host, or container when containerised), 0-1",
+                srv, p.systemCpuRatio());
+        optionalCounter(b, "mc_process_cpu_seconds_total", "CPU seconds consumed by the process", srv, p.processCpuSeconds());
         gauge(b, "mc_process_start_time_seconds", "Process start, unix seconds", srv, p.startTimeSeconds());
         gauge(b, "mc_uptime_seconds", "JVM uptime", srv, p.uptimeSeconds());
 
@@ -184,6 +195,15 @@ final class PrometheusWriter {
     private static void gauge(StringBuilder b, String name, String doc, String srv, double v) {
         help(b, name, "gauge", doc);
         b.append(name).append("{server=\"").append(srv).append("\"} ").append(num(v)).append('\n');
+    }
+
+    /** Skips the family entirely when the platform could not supply the reading. */
+    private static void optionalGauge(StringBuilder b, String name, String doc, String srv, double v) {
+        if (!Double.isNaN(v)) gauge(b, name, doc, srv, v);
+    }
+
+    private static void optionalCounter(StringBuilder b, String name, String doc, String srv, double v) {
+        if (!Double.isNaN(v)) counter(b, name, doc, srv, v);
     }
 
     private static void counter(StringBuilder b, String name, String doc, String srv, double v) {
@@ -221,6 +241,9 @@ final class PrometheusWriter {
 
     /** Locale.ROOT matters: a comma decimal separator would corrupt the exposition. */
     private static String num(double v) {
+        if (Double.isNaN(v)) return "NaN";
+        if (v == Double.POSITIVE_INFINITY) return "+Inf";
+        if (v == Double.NEGATIVE_INFINITY) return "-Inf";
         if (v == Math.rint(v) && !Double.isInfinite(v) && Math.abs(v) < 1e15) {
             return Long.toString((long) v);
         }

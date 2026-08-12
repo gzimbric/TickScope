@@ -1411,7 +1411,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Through the Chicago relay, so ~25ms is the floor for players at home.",
+      "description": "Empty when nobody is online: TickScope publishes ping only when at least one player was actually measured, so an idle server is not reported as 0 ms.",
       "fieldConfig": {
         "defaults": {
           "custom": {

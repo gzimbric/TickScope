@@ -55,6 +55,7 @@ final class MetricsCollector {
     private final String javaVersion;
     private final String platform;
     private final boolean perWorld;
+    private final boolean byType;
     private final EventCounters events;
 
     private final OperatingSystemMXBean os =
@@ -67,31 +68,37 @@ final class MetricsCollector {
             ManagementFactory.getGarbageCollectorMXBeans();
 
     /**
-     * Entity-by-type is the only reading that needs a real iteration rather than a
-     * Paper counter, so it runs on its own slower cadence and is cached here.
+     * Everything that needs to walk the world rather than read a counter, kept on its own
+     * slower cadence. It is carried across a reload so that reconfiguring does not blank the
+     * series until the next scan.
      */
-    private volatile List<Snapshot.TypeCount> entityTypes = List.of();
-    private volatile double entityCollectionSeconds;
+    private volatile HeavyWorldData heavy;
     private volatile PlayerSample foliaPlayers = PlayerSample.EMPTY;
 
-    MetricsCollector(String serverId, boolean perWorld, EventCounters events,
+    MetricsCollector(String serverId, boolean perWorld, boolean byType, EventCounters events,
                      String tickScopeVersion, String paperVersion, String javaVersion,
-                     String platform) {
+                     String platform, HeavyWorldData carried) {
         this.serverId = serverId;
         this.perWorld = perWorld;
+        this.byType = byType;
         this.events = events;
         this.tickScopeVersion = tickScopeVersion;
         this.paperVersion = paperVersion;
         this.javaVersion = javaVersion;
         this.platform = platform;
+        this.heavy = carried == null ? HeavyWorldData.EMPTY : carried;
     }
 
     Snapshot collectPaper() {
-        return collect(false);
+        return collect(false, 0);
     }
 
-    Snapshot collectFolia() {
-        return collect(true);
+    /**
+     * @param onlinePlayers read on the global region, because the per-player sample that
+     *                      supplies ping only completes after this snapshot is published.
+     */
+    Snapshot collectFolia(int onlinePlayers) {
+        return collect(true, onlinePlayers);
     }
 
     Snapshot initialSnapshot() {
@@ -102,7 +109,12 @@ final class MetricsCollector {
         foliaPlayers = players;
     }
 
-    private Snapshot collect(boolean folia) {
+    /** The cached scan results, so a replacement collector can start where this one left off. */
+    HeavyWorldData heavyWorldData() {
+        return heavy;
+    }
+
+    private Snapshot collect(boolean folia, int foliaOnlinePlayers) {
         long started = System.nanoTime();
 
         // Folia has no single server tick. Publishing its global-region tick history as server
@@ -115,25 +127,27 @@ final class MetricsCollector {
         List<Snapshot.WorldStat> worlds = new ArrayList<>();
         if (perWorld) {
             for (World w : Bukkit.getWorlds()) {
-                // Paper maintains these as counters, so they are O(1) — no entity walk.
-                worlds.add(new Snapshot.WorldStat(w.getName(), w.getEntityCount(),
-                        w.getTileEntityCount(), w.getChunkCount(), w.getPlayerCount()));
+                // Only genuine counter reads belong here: getFullChunksCount and the world's
+                // own player list. Entity and tile-entity totals iterate, so they live on the
+                // slower scan instead.
+                worlds.add(new Snapshot.WorldStat(w.getName(), w.getChunkCount(), w.getPlayerCount()));
             }
         }
 
         PlayerSample playerSample = folia ? foliaPlayers : paperPlayers();
+        HeavyWorldData scan = heavy;
 
         Snapshot.Jvm jvm = jvm();
         Snapshot.Proc proc = proc();
         Map<String, Long> eventCounts = events.snapshot();
         double collectionSeconds = (System.nanoTime() - started) / NANOS_PER_SEC;
         return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion, platform,
-                collectionSeconds, entityCollectionSeconds, ticks, tps,
-                playerSample.online(), Bukkit.getMaxPlayers(),
+                collectionSeconds, scan.seconds(), ticks, tps,
+                folia ? foliaOnlinePlayers : playerSample.online(), Bukkit.getMaxPlayers(),
                 Bukkit.getPluginManager().getPlugins().length,
-                playerSample.pingAvgMs(), playerSample.pingMaxMs(),
-                List.copyOf(worlds), entityTypes, playerSample.regionTps(),
-                playerSample.regionMspt(),
+                playerSample.pingAvgMs(), playerSample.pingMaxMs(), playerSample.pingSamples(),
+                List.copyOf(worlds), scan.totals(), scan.types(),
+                playerSample.regionTps(), playerSample.regionMspt(),
                 jvm, proc, eventCounts);
     }
 
@@ -148,34 +162,53 @@ final class MetricsCollector {
             pingMax = Math.max(pingMax, ping);
         }
         return new PlayerSample(online, online == 0 ? 0d : (double) pingSum / online,
-                pingMax, List.of(), List.of());
+                pingMax, online, List.of(), List.of());
     }
 
-    /** Separate cadence: this one is O(entities), unlike everything in collect(). */
-    void collectEntityTypes() {
+    /**
+     * The readings that cost more than a counter read, on their own cadence.
+     *
+     * <p>Paper's {@code getTileEntityCount()} iterates every visible chunk holder, and before
+     * 26.x {@code getEntityCount()} walked every entity in the world, so neither is the O(1)
+     * counter this once assumed. The entity-type breakdown is O(entities) by nature. All three
+     * are gathered here, well away from the collection interval.
+     */
+    void collectHeavyWorldData() {
         long started = System.nanoTime();
-        List<Snapshot.TypeCount> out = new ArrayList<>();
+        List<Snapshot.WorldTotals> totals = new ArrayList<>();
+        List<Snapshot.TypeCount> types = new ArrayList<>();
         for (World w : Bukkit.getWorlds()) {
-            Map<String, Integer> byType = new HashMap<>();
-            for (Entity e : w.getEntities()) {
-                byType.merge(typeName(e.getType()), 1, Integer::sum);
+            if (perWorld) {
+                totals.add(new Snapshot.WorldTotals(
+                        w.getName(), w.getEntityCount(), w.getTileEntityCount()));
             }
-            byType.forEach((type, n) -> out.add(new Snapshot.TypeCount(w.getName(), type, n)));
+            if (byType) {
+                Map<String, Integer> byTypeName = new HashMap<>();
+                for (Entity e : w.getEntities()) {
+                    byTypeName.merge(typeName(e.getType()), 1, Integer::sum);
+                }
+                byTypeName.forEach((type, n) -> types.add(new Snapshot.TypeCount(w.getName(), type, n)));
+            }
         }
-        entityTypes = List.copyOf(out);
-        entityCollectionSeconds = (System.nanoTime() - started) / NANOS_PER_SEC;
+        heavy = new HeavyWorldData(List.copyOf(totals), List.copyOf(types),
+                (System.nanoTime() - started) / NANOS_PER_SEC);
     }
 
     private Snapshot.Jvm jvm() {
-        MemoryUsage heap = memory.getHeapMemoryUsage();
+        MemoryUsage heapUsage = memory.getHeapMemoryUsage();
         MemoryUsage non = memory.getNonHeapMemoryUsage();
         List<Snapshot.Gc> gcs = new ArrayList<>(gcBeans.size());
         for (GarbageCollectorMXBean gc : gcBeans) {
-            gcs.add(new Snapshot.Gc(gc.getName(), Math.max(0, gc.getCollectionCount()),
-                    Math.max(0, gc.getCollectionTime()) / 1000d));
+            long count = gc.getCollectionCount();
+            long millis = gc.getCollectionTime();
+            // -1 means this collector does not report the value. A counter that is missing
+            // must not be published as a real counter sitting at zero.
+            if (count < 0L) continue;
+            gcs.add(new Snapshot.Gc(gc.getName(), count,
+                    millis < 0L ? Double.NaN : millis / 1000d));
         }
         return new Snapshot.Jvm(
-                heap.getUsed(), heap.getCommitted(), heap.getMax(), heap.getInit(),
+                heapUsage.getUsed(), heapUsage.getCommitted(), heapUsage.getMax(), heapUsage.getInit(),
                 non.getUsed(), non.getCommitted(), non.getMax(), non.getInit(),
                 threads.getThreadCount(), threads.getDaemonThreadCount(),
                 threads.getPeakThreadCount(), threads.getTotalStartedThreadCount(),
@@ -183,13 +216,22 @@ final class MetricsCollector {
     }
 
     private Snapshot.Proc proc() {
-        // These return -1 when the platform cannot supply them; clamp so the exposition
-        // never carries a negative ratio.
-        double procCpu = Math.max(0d, os.getProcessCpuLoad());
-        double sysCpu = Math.max(0d, os.getCpuLoad());
-        double procSeconds = Math.max(0L, os.getProcessCpuTime()) / NANOS_PER_SEC;
-        return new Snapshot.Proc(procCpu, sysCpu, procSeconds,
+        return new Snapshot.Proc(ratio(os.getProcessCpuLoad()), ratio(os.getCpuLoad()),
+                cpuSeconds(os.getProcessCpuTime()),
                 runtime.getStartTime() / 1000d, runtime.getUptime() / 1000d);
+    }
+
+    /**
+     * These beans report a negative value, and OpenJ9 reports -1 on the first call, when a
+     * reading is unavailable. Clamping that to zero made an unsupported platform look like a
+     * completely idle one; NaN keeps the series out of the exposition instead.
+     */
+    static double ratio(double value) {
+        return Double.isNaN(value) || value < 0d ? Double.NaN : value;
+    }
+
+    static double cpuSeconds(long nanos) {
+        return nanos < 0L ? Double.NaN : nanos / NANOS_PER_SEC;
     }
 
     /**
@@ -229,15 +271,26 @@ final class MetricsCollector {
         m.put("server-id", serverId);
         m.put("platform", platform);
         m.put("per-world", String.valueOf(perWorld));
-        m.put("entity-type-series", String.valueOf(entityTypes.size()));
+        m.put("entity-type-series", String.valueOf(heavy.types().size()));
         return m;
     }
 
-    record PlayerSample(int online, double pingAvgMs, int pingMaxMs,
+    /** Results of the slow world scan, kept together so they can survive a reload as a unit. */
+    record HeavyWorldData(List<Snapshot.WorldTotals> totals, List<Snapshot.TypeCount> types,
+                          double seconds) {
+        static final HeavyWorldData EMPTY = new HeavyWorldData(List.of(), List.of(), 0d);
+
+        HeavyWorldData {
+            totals = List.copyOf(totals);
+            types = List.copyOf(types);
+        }
+    }
+
+    record PlayerSample(int online, double pingAvgMs, int pingMaxMs, int pingSamples,
                         List<Snapshot.RegionTps> regionTps,
                         List<Snapshot.RegionMspt> regionMspt) {
         static final PlayerSample EMPTY = new PlayerSample(
-                0, 0d, 0, List.of(), List.of());
+                0, 0d, 0, 0, List.of(), List.of());
 
         PlayerSample {
             regionTps = List.copyOf(regionTps);
