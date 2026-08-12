@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # Action versions on main went a whole generation stale and only surfaced as a runner
+  # deprecation warning. This keeps them current without anyone having to notice.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+
+  # The jar ships no third-party classes; this watches the build and test plugins only.
+  - package-ecosystem: maven
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    ignore:
+      # paper-api is pinned to the OLDEST supported API level on purpose. Compiling against
+      # 1.18.2 is exactly what lets one jar run from 1.18.2 through 26.2, so an "upgrade"
+      # here would quietly raise the version floor and drop most supported servers.
+      - dependency-name: "io.papermc.paper:paper-api"
