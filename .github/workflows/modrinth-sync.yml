@@ -1,0 +1,59 @@
+name: modrinth-sync
+
+# Re-synchronizes the Modrinth project page and one version's changelog from the current
+# main branch, without cutting a release. Modrinth never refreshes the project body on its
+# own, and a release note corrected after publication has to be pushed here as well.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Released version to re-synchronize, without the leading v
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Shared with release.yml: both mutate the same Modrinth project and must never overlap.
+concurrency:
+  group: modrinth-publish
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build release notes
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git rev-parse --verify "refs/tags/v$VERSION^{commit}" >/dev/null
+          # The predecessor must come from this tag's ancestry. Taking the newest other tag
+          # produced a backwards compare link when an older version was re-synchronized.
+          previous=$(git describe --tags --abbrev=0 "v$VERSION^" 2>/dev/null || true)
+          echo "Previous tag by ancestry: ${previous:-<none>}"
+          bash .github/scripts/release-notes.sh "$VERSION" "$previous" \
+            > "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
+
+      - name: Synchronize Modrinth
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Only the highest semantic version carries the featured flag, so back-syncing an
+          # older version must leave it alone.
+          newest=$(git tag --sort=-v:refname | head -1)
+          if [[ "$newest" == "v$VERSION" ]]; then
+            export MODRINTH_FEATURE=true
+          else
+            export MODRINTH_FEATURE=false
+          fi
+          echo "featuring: $MODRINTH_FEATURE (highest tag $newest)"
+          bash .github/scripts/publish-modrinth.sh "$VERSION" \
+            "target/TickScope-$VERSION.jar" "$RUNNER_TEMP/release-notes.md"
