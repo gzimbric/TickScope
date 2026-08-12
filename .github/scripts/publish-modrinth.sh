@@ -107,7 +107,7 @@ body=$(perl -0pe '
   s#^1\. \[Download the latest release\]\([^)]*\)\.#1. Download the latest jar from the **Files** tab at the top of this page.#m;
   s#^- \[Download on GitHub\]\([^)]*\)\n##m;
   s#^- \[Download on Modrinth\]\([^)]*\)\n##m;
-  s#^## Download and support$### Support#m;
+  s{^## Download and support$}{## Support}m;
 ' "$REPO_ROOT/README.md")
 project_data=$(jq -cn --arg body "$body" \
   --arg wiki "https://github.com/gzimbric/TickScope/wiki" \
