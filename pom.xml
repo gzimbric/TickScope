@@ -41,7 +41,7 @@
          Bump it when cutting a release; leaving it stale only dates the entries. -->
     <project.build.outputTimestamp>2026-08-12T00:00:00Z</project.build.outputTimestamp>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <paper.version>1.18.2-R0.1-SNAPSHOT</paper.version>
+    <paper.version>26.2.build.111-stable</paper.version>
     <junit.version>5.14.2</junit.version>
   </properties>
 
