@@ -17,21 +17,15 @@
  */
 package cc.zimbri.tickscope;
 
-import com.sun.net.httpserver.HttpServer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -44,11 +38,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class TickScope extends JavaPlugin {
 
-    private static final String CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
-    private static final String BEARER = "Bearer ";
-
-    private HttpServer http;
-    private ExecutorService httpExecutor;
+    private MetricsHttpServer http;
     private PlatformScheduler scheduler;
     private PlatformScheduler.TaskHandle sampler;
     private PlatformScheduler.TaskHandle entitySampler;
@@ -91,23 +81,6 @@ public final class TickScope extends JavaPlugin {
         if (sampler != null) sampler.cancel();
         if (entitySampler != null) entitySampler.cancel();
         stopHttp();
-    }
-
-    /**
-     * Constant-time bearer check. String.equals returns as soon as two bytes differ, which hands
-     * the token back a byte at a time to anyone who can time the response; MessageDigest.isEqual
-     * compares the whole array regardless. An empty configured token disables auth entirely.
-     *
-     * <p>This stops unauthenticated reads. It is not confidentiality — the endpoint is plain HTTP
-     * and the token crosses the wire in the clear, so put a TLS-terminating proxy in front of it
-     * if the scrape path is not one you control.
-     */
-    static boolean authorised(String token, String header) {
-        if (token.isEmpty()) return true;
-        if (header == null || !header.startsWith(BEARER)) return false;
-        return MessageDigest.isEqual(
-                header.substring(BEARER.length()).trim().getBytes(StandardCharsets.UTF_8),
-                token.getBytes(StandardCharsets.UTF_8));
     }
 
     @Override
@@ -272,69 +245,22 @@ public final class TickScope extends JavaPlugin {
     }
 
     private void startHttp(Settings settings) throws IOException {
-        HttpServer candidate = null;
-        ExecutorService candidateExecutor = null;
+        MetricsHttpServer candidate = new MetricsHttpServer(settings.bind, settings.port,
+                settings.path, settings.token,
+                () -> PrometheusWriter.render(latest).getBytes(StandardCharsets.UTF_8));
         try {
-            candidate = HttpServer.create(new InetSocketAddress(settings.bind, settings.port), 0);
-            Settings endpointSettings = settings;
-            candidate.createContext(settings.path, exchange -> {
-                String method = exchange.getRequestMethod();
-                if (!exchange.getRequestURI().getPath().equals(endpointSettings.path)) {
-                    exchange.sendResponseHeaders(404, -1);
-                    exchange.close();
-                    return;
-                }
-                if (!method.equals("GET") && !method.equals("HEAD")) {
-                    exchange.getResponseHeaders().set("Allow", "GET, HEAD");
-                    exchange.sendResponseHeaders(405, -1);
-                    exchange.close();
-                    return;
-                }
-                if (!authorised(endpointSettings.token,
-                        exchange.getRequestHeaders().getFirst("Authorization"))) {
-                    exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer");
-                    exchange.sendResponseHeaders(401, -1);
-                    exchange.close();
-                    return;
-                }
-                byte[] body = PrometheusWriter.render(latest).getBytes(StandardCharsets.UTF_8);
-                exchange.getResponseHeaders().set("Content-Type", CONTENT_TYPE);
-                if (method.equals("HEAD")) {
-                    exchange.getResponseHeaders().set("Content-Length",
-                            Integer.toString(body.length));
-                    exchange.sendResponseHeaders(200, -1);
-                    exchange.close();
-                    return;
-                }
-                exchange.sendResponseHeaders(200, body.length);
-                try (OutputStream os = exchange.getResponseBody()) {
-                    os.write(body);
-                }
-            });
-            candidateExecutor = Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "TickScope-http");
-                t.setDaemon(true);
-                return t;
-            });
-            candidate.setExecutor(candidateExecutor);
             candidate.start();
-            http = candidate;
-            httpExecutor = candidateExecutor;
-        } catch (IOException | RuntimeException e) {
-            if (candidate != null) candidate.stop(0);
-            if (candidateExecutor != null) candidateExecutor.shutdownNow();
+        } catch (RuntimeException e) {
+            candidate.close();
             throw e;
         }
+        http = candidate;
     }
 
     private void stopHttp() {
         if (http != null) {
-            http.stop(0);
+            http.close();
             http = null;
-        }
-        if (httpExecutor != null) {
-            httpExecutor.shutdownNow();
-            httpExecutor = null;
         }
     }
 

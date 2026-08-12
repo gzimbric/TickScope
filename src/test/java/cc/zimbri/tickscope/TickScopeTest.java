@@ -18,15 +18,24 @@ class TickScopeTest {
 
     @Test
     void emptyTokenDisablesAuthentication() {
-        assertTrue(TickScope.authorised("", null));
+        assertTrue(MetricsHttpServer.authorised("", null));
     }
 
     @Test
     void acceptsOnlyTheCompleteBearerToken() {
-        assertTrue(TickScope.authorised("secret", "Bearer secret"));
-        assertFalse(TickScope.authorised("secret", null));
-        assertFalse(TickScope.authorised("secret", "Basic secret"));
-        assertFalse(TickScope.authorised("secret", "Bearer secre"));
-        assertFalse(TickScope.authorised("secret", "Bearer secret-extra"));
+        assertTrue(MetricsHttpServer.authorised("secret", "Bearer secret"));
+        assertFalse(MetricsHttpServer.authorised("secret", null));
+        assertFalse(MetricsHttpServer.authorised("secret", "Basic secret"));
+        assertFalse(MetricsHttpServer.authorised("secret", "Bearer secre"));
+        assertFalse(MetricsHttpServer.authorised("secret", "Bearer secret-extra"));
+    }
+
+    @Test
+    void treatsTheAuthenticationSchemeAsCaseInsensitive() {
+        // RFC 9110 defines the scheme as case-insensitive, and Prometheus lets the operator
+        // write the authorization type themselves.
+        assertTrue(MetricsHttpServer.authorised("secret", "bearer secret"));
+        assertTrue(MetricsHttpServer.authorised("secret", "BEARER secret"));
+        assertFalse(MetricsHttpServer.authorised("secret", "bearer wrong"));
     }
 }
