@@ -41,5 +41,14 @@ jobs:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
           VERSION: ${{ inputs.version }}
         run: |
+          # Only the newest release carries the featured flag, so back-syncing an older
+          # version must leave it alone.
+          newest=$(git tag --sort=-v:refname | head -1)
+          if [[ "$newest" == "v$VERSION" ]]; then
+            export MODRINTH_FEATURE=true
+          else
+            export MODRINTH_FEATURE=false
+          fi
+          echo "featuring: $MODRINTH_FEATURE (newest tag $newest)"
           bash .github/scripts/publish-modrinth.sh "$VERSION" \
             "target/TickScope-$VERSION.jar" "$RUNNER_TEMP/release-notes.md"

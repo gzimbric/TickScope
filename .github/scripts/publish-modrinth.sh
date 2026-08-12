@@ -12,6 +12,10 @@ fi
 VERSION=$1
 ARTIFACT=$2
 CHANGELOG_FILE=$3
+# Featuring is for the newest release only; a back-sync of an older version must not
+# take the flag away from it.
+FEATURE=${MODRINTH_FEATURE:-true}
+[[ "$FEATURE" == true || "$FEATURE" == false ]] || { echo "MODRINTH_FEATURE must be true or false" >&2; exit 2; }
 PROJECT_ID=A0ZakExK
 API=https://api.modrinth.com/v2
 AUTH_HEADER="Authorization: $MODRINTH_TOKEN"
@@ -38,9 +42,10 @@ if [[ -z "$version_id" ]]; then
     --arg project "$PROJECT_ID" \
     --arg changelog "$changelog" \
     --argjson game_versions "$game_versions" \
+    --argjson feature "$FEATURE" \
     '{name:$name,version_number:$version,project_id:$project,changelog:$changelog,
       version_type:"release",loaders:["paper","purpur","folia"],game_versions:$game_versions,
-      featured:true,status:"listed",environment:"server_only",file_parts:["artifact"],
+      featured:$feature,status:"listed",environment:"server_only",file_parts:["artifact"],
       primary_file:"artifact",dependencies:[]}')
 
   response=$(curl --fail-with-body -sS -X POST -H "$AUTH_HEADER" -H "$USER_AGENT" \
@@ -54,16 +59,20 @@ else
 fi
 
 # Always push the changelog, so correcting release notes after the fact reaches Modrinth too.
-# This project ships one universal jar, so only the newest version should be featured.
+patch=$(jq -cn --arg changelog "$changelog" --argjson feature "$FEATURE" \
+  'if $feature then {featured:true,changelog:$changelog} else {changelog:$changelog} end')
 curl --fail-with-body -sS -o /dev/null -X PATCH -H "$AUTH_HEADER" -H "$USER_AGENT" \
-  -H "Content-Type: application/json" \
-  --data "$(jq -cn --arg changelog "$changelog" '{featured:true,changelog:$changelog}')" \
-  "$API/version/$version_id"
-while IFS= read -r old_id; do
-  [[ -n "$old_id" ]] || continue
-  curl --fail-with-body -sS -o /dev/null -X PATCH -H "$AUTH_HEADER" -H "$USER_AGENT" \
-    -H "Content-Type: application/json" --data '{"featured":false}' "$API/version/$old_id"
-done < <(jq -r --arg current "$version_id" '.[] | select(.featured and .id != $current) | .id' <<<"$versions")
+  -H "Content-Type: application/json" --data "$patch" "$API/version/$version_id"
+
+# This project ships one universal jar, so only the newest version should be featured. Re-syncing
+# an older version must not steal that flag, so the sweep only runs when featuring is requested.
+if [[ "$FEATURE" == true ]]; then
+  while IFS= read -r old_id; do
+    [[ -n "$old_id" ]] || continue
+    curl --fail-with-body -sS -o /dev/null -X PATCH -H "$AUTH_HEADER" -H "$USER_AGENT" \
+      -H "Content-Type: application/json" --data '{"featured":false}' "$API/version/$old_id"
+  done < <(jq -r --arg current "$version_id" '.[] | select(.featured and .id != $current) | .id' <<<"$versions")
+fi
 
 # Modrinth does not update the project body when a version is uploaded.
 body=$(perl -0pe '
