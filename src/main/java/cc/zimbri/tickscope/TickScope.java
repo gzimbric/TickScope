@@ -51,6 +51,7 @@ public final class TickScope extends JavaPlugin {
     private FoliaPlayerSampler foliaPlayers;
     private EventCounters events;
     private final AtomicLong foliaPlayerSampleGeneration = new AtomicLong();
+    private final AtomicLong foliaPlayerSampleApplied = new AtomicLong();
     private final ReentrantLock runtimeLock = new ReentrantLock();
     private volatile MetricsCollector collector;
     private volatile Snapshot latest;
@@ -294,10 +295,29 @@ public final class TickScope extends JavaPlugin {
         long generation = foliaPlayerSampleGeneration.incrementAndGet();
         MetricsCollector samplingCollector = collector;
         foliaPlayers.sample(getServer().getOnlinePlayers(), players -> {
-            if (foliaPlayerSampleGeneration.get() == generation) {
+            // A batch only completes once every player's region has run its task. Discarding a
+            // batch the moment a newer one started meant that with several regions lagging at
+            // staggered times, no batch ever survived and ping and regional figures stayed
+            // frozen at the last success indefinitely. A late batch is still real data, so it
+            // is accepted unless a newer one has already been applied.
+            if (claimNewerSample(foliaPlayerSampleApplied, generation)) {
                 samplingCollector.updateFoliaPlayers(players);
             }
         });
+    }
+
+    /**
+     * Advances the applied-sample watermark to {@code generation}, reporting whether this batch
+     * won. Ordering, not recency, is what matters: an older batch must never overwrite a newer
+     * one, but a late batch is better than none.
+     */
+    static boolean claimNewerSample(AtomicLong applied, long generation) {
+        long current;
+        do {
+            current = applied.get();
+            if (current >= generation) return false;
+        } while (!applied.compareAndSet(current, generation));
+        return true;
     }
 
     private ReloadResult reloadRuntime() {

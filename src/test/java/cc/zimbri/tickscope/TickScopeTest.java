@@ -11,6 +11,9 @@ package cc.zimbri.tickscope;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.atomic.AtomicLong;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -37,5 +40,19 @@ class TickScopeTest {
         assertTrue(MetricsHttpServer.authorised("secret", "bearer secret"));
         assertTrue(MetricsHttpServer.authorised("secret", "BEARER secret"));
         assertFalse(MetricsHttpServer.authorised("secret", "bearer wrong"));
+    }
+
+    @Test
+    void acceptsLateSamplesButNeverOutOfOrderOnes() {
+        AtomicLong applied = new AtomicLong();
+
+        assertTrue(TickScope.claimNewerSample(applied, 5L));
+        // Batch 4 finished after batch 5: older data must not overwrite newer.
+        assertFalse(TickScope.claimNewerSample(applied, 4L));
+        // Batch 7 is late -- several cycles have started since -- but it is still the newest
+        // data anyone has, so it wins rather than being discarded for being overdue.
+        assertTrue(TickScope.claimNewerSample(applied, 7L));
+        assertFalse(TickScope.claimNewerSample(applied, 7L));
+        assertEquals(7L, applied.get());
     }
 }
