@@ -1,0 +1,45 @@
+name: modrinth-sync
+
+# Re-synchronizes the Modrinth project page and one version's changelog from the current
+# main branch, without cutting a release. Modrinth never refreshes the project body on its
+# own, and a release note corrected after publication has to be pushed here as well.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Released version to re-synchronize, without the leading v
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modrinth-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build release notes
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          previous=$(git tag --sort=-v:refname | grep -v "^v$VERSION$" | head -1)
+          bash .github/scripts/release-notes.sh "$VERSION" "$previous" \
+            > "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
+
+      - name: Synchronize Modrinth
+        env:
+          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          bash .github/scripts/publish-modrinth.sh "$VERSION" \
+            "target/TickScope-$VERSION.jar" "$RUNNER_TEMP/release-notes.md"

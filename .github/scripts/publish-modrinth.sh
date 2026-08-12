@@ -17,7 +17,8 @@ API=https://api.modrinth.com/v2
 AUTH_HEADER="Authorization: $MODRINTH_TOKEN"
 USER_AGENT="User-Agent: gzimbric/TickScope release workflow (github.com/gzimbric/TickScope)"
 
-[[ -f "$ARTIFACT" ]] || { echo "missing artifact: $ARTIFACT" >&2; exit 2; }
+# The artifact is only needed when this version has not been uploaded yet, so a re-run that
+# just re-synchronizes the page does not have to rebuild the jar.
 [[ -f "$CHANGELOG_FILE" ]] || { echo "missing changelog: $CHANGELOG_FILE" >&2; exit 2; }
 jq -e 'type == "array" and length > 0' .github/modrinth-game-versions.json >/dev/null
 
@@ -26,8 +27,10 @@ versions=$(curl --fail-with-body -sS -H "$AUTH_HEADER" -H "$USER_AGENT" \
 version_id=$(jq -r --arg version "$VERSION" \
   '[.[] | select(.version_number == $version) | .id][0] // empty' <<<"$versions")
 
+changelog=$(<"$CHANGELOG_FILE")
+
 if [[ -z "$version_id" ]]; then
-  changelog=$(<"$CHANGELOG_FILE")
+  [[ -f "$ARTIFACT" ]] || { echo "missing artifact: $ARTIFACT" >&2; exit 2; }
   game_versions=$(<.github/modrinth-game-versions.json)
   data=$(jq -cn \
     --arg name "TickScope $VERSION" \
@@ -50,9 +53,12 @@ else
   echo "Modrinth version $VERSION already exists ($version_id); skipping upload."
 fi
 
+# Always push the changelog, so correcting release notes after the fact reaches Modrinth too.
 # This project ships one universal jar, so only the newest version should be featured.
 curl --fail-with-body -sS -o /dev/null -X PATCH -H "$AUTH_HEADER" -H "$USER_AGENT" \
-  -H "Content-Type: application/json" --data '{"featured":true}' "$API/version/$version_id"
+  -H "Content-Type: application/json" \
+  --data "$(jq -cn --arg changelog "$changelog" '{featured:true,changelog:$changelog}')" \
+  "$API/version/$version_id"
 while IFS= read -r old_id; do
   [[ -n "$old_id" ]] || continue
   curl --fail-with-body -sS -o /dev/null -X PATCH -H "$AUTH_HEADER" -H "$USER_AGENT" \

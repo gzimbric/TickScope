@@ -57,18 +57,10 @@ jobs:
           (cd target && sha256sum "$artifact_name") > "$artifact.sha256"
 
           previous=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')
-          if [[ -n "$previous" && "$previous" != "$RELEASE_TAG" ]]; then
-            range="$previous..$RELEASE_TAG"
-          else
-            range="$RELEASE_TAG"
+          if [[ "$previous" == "$RELEASE_TAG" ]]; then
+            previous=""
           fi
-          {
-            echo "## Changes"
-            echo
-            git log --no-merges --pretty='- %s' "$range"
-            echo
-            echo "**Full changelog:** https://github.com/$GITHUB_REPOSITORY/compare/$previous...$RELEASE_TAG"
-          } > "$RUNNER_TEMP/release-notes.md"
+          bash .github/scripts/release-notes.sh "$VERSION" "$previous" > "$RUNNER_TEMP/release-notes.md"
 
       - name: Publish GitHub release
         env:
