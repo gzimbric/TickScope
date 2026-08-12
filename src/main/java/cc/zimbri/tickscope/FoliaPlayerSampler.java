@@ -185,7 +185,7 @@ final class FoliaPlayerSampler {
             completed.accept(new MetricsCollector.PlayerSample(players,
                     successfulPings == 0 ? 0d
                             : (double) pingSum.get() / successfulPings / MILLIS_PER_SECOND,
-                    pingMax.get() / MILLIS_PER_SECOND,
+                    pingMax.get() / MILLIS_PER_SECOND, successfulPings,
                     List.copyOf(regions), List.copyOf(tickDurations)));
         }
     }

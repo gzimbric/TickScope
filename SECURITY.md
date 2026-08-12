@@ -10,7 +10,8 @@ release before reporting a problem that may already have been fixed.
 Use [GitHub's private vulnerability reporting form](https://github.com/gzimbric/TickScope/security/advisories/new).
 Do not open a public issue for a vulnerability that has not been fixed.
 
-Include the TickScope, Paper or Purpur, Minecraft, and Java versions; the relevant configuration;
+Include the TickScope version; the server software and version (Paper, Purpur, Folia or Canvas);
+the Minecraft and Java versions; the relevant configuration;
 steps to reproduce; and the security impact. Redact authentication tokens, private addresses, and
 unrelated server data.
 
@@ -19,9 +20,15 @@ through the private advisory. No response or resolution deadline is guaranteed.
 
 ## Endpoint security model
 
-TickScope binds to `127.0.0.1` by default. A configured bearer token prevents anonymous reads but
-does not encrypt the HTTP connection. Use a firewall or loopback-only binding for network isolation
-and a TLS-terminating reverse proxy whenever metrics cross an untrusted network.
+TickScope supports Paper, Purpur, Folia and Canvas, and binds to `127.0.0.1` by default. A
+configured bearer token prevents anonymous reads but does not encrypt the HTTP connection.
+Use a firewall or loopback-only binding for network isolation and a TLS-terminating reverse
+proxy whenever metrics cross an untrusted network.
+
+The endpoint enforces its own per-connection read and exchange deadlines, so a client that opens
+a connection and stops sending is disconnected rather than left holding a worker. A large enough
+burst of such connections can still delay a scrape until those deadlines expire, but the endpoint
+recovers without intervention.
 
 TickScope makes no outbound network connections and exports no player names. Metrics still reveal
 player activity and world-level entity and chunk information, so the endpoint should not be exposed

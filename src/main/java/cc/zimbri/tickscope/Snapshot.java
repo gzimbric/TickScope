@@ -25,6 +25,10 @@ import java.util.Map;
 /**
  * One immutable sample set. A platform-owned collector publishes these; HTTP threads only ever
  * read the latest one, so a scrape never touches a Paper main thread or Folia region thread.
+ *
+ * <p>Readings that the platform cannot supply are represented as {@link Double#NaN} rather than
+ * zero, and the writer omits those series entirely. A JVM that cannot report CPU load should not
+ * be indistinguishable from an idle one.
  */
 record Snapshot(
         String serverId,
@@ -41,7 +45,9 @@ record Snapshot(
         int plugins,
         double pingAverageSeconds,
         double pingMaximumSeconds,
+        int pingSamples,
         List<WorldStat> worlds,
+        List<WorldTotals> worldTotals,
         List<TypeCount> entityTypes,
         List<RegionTps> regionTps,
         List<RegionTickDuration> regionTickDurations,
@@ -52,6 +58,7 @@ record Snapshot(
     Snapshot {
         tps = tps.clone();
         worlds = List.copyOf(worlds);
+        worldTotals = List.copyOf(worldTotals);
         entityTypes = List.copyOf(entityTypes);
         regionTps = List.copyOf(regionTps);
         regionTickDurations = List.copyOf(regionTickDurations);
@@ -68,7 +75,15 @@ record Snapshot(
         static final Ticks EMPTY = new Ticks(0, 0, 0, 0, 0, 0, 0);
     }
 
-    record WorldStat(String name, int entities, int tileEntities, int chunks, int players) {}
+    /** Per-world readings that are genuine O(1) counter reads and can be sampled every cycle. */
+    record WorldStat(String name, int chunks, int players) {}
+
+    /**
+     * Per-world readings that are not counter reads. Paper's getTileEntityCount iterates every
+     * visible chunk holder, and before 26.x getEntityCount walked every entity in the world, so
+     * these are sampled on the slower scan cadence rather than every collection.
+     */
+    record WorldTotals(String name, int entities, int tileEntities) {}
 
     record TypeCount(String world, String type, int count) {}
 
@@ -87,6 +102,7 @@ record Snapshot(
                int threadsCurrent, int threadsDaemon, int threadsPeak, long threadsStarted,
                long classesLoaded, List<Gc> gcs) {}
 
+    /** CPU readings are NaN when the platform cannot supply them. */
     record Proc(double processCpuRatio, double systemCpuRatio,
                 double processCpuSeconds, double startTimeSeconds, double uptimeSeconds) {}
 
@@ -100,7 +116,8 @@ record Snapshot(
         return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion,
                 platform,
                 0d, 0d, Ticks.EMPTY, new double[]{0, 0, 0},
-                0, 0, 0, 0d, 0, List.of(), List.of(), List.of(), List.of(),
+                0, 0, 0, 0d, 0d, 0,
+                List.of(), List.of(), List.of(), List.of(), List.of(),
                 new Jvm(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, List.of()),
                 new Proc(0, 0, 0, 0, 0), Map.of());
     }

@@ -32,10 +32,14 @@ collection-interval-ticks: 100
 # Per-world entity / tile-entity / chunk / player series.
 per-world: true
 
+# Readings that have to walk the world rather than read a counter run on this slower
+# cadence: per-world entity totals, per-world tile-entity totals, and the entity-type
+# breakdown. Paper's tile-entity count iterates every loaded chunk, and before Minecraft
+# 26 its entity count iterated every entity, so none of these are the O(1) counters that
+# `per-world` above relies on -- which is why they are sampled here instead.
+# All of them are unavailable on Folia, where walking a world crosses region ownership.
 entity-types:
-  # Entities broken down by type, e.g. mc_world_entities_by_type{type="zombie"}.
-  # This is the ONLY reading that iterates entities rather than reading a counter,
-  # so it runs on its own slower cadence. Turn it off if entity counts get extreme.
-  # Folia disables this series because a world-wide entity walk would cross regions.
+  # The per-type breakdown, e.g. mc_world_entities_by_type{type="zombie"}. Turning this
+  # off keeps the cheaper per-world totals; interval-ticks still governs both.
   enabled: true
   interval-ticks: 600

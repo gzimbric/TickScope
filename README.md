@@ -2,12 +2,18 @@
 
 # TickScope — Minecraft monitoring for Prometheus and Grafana
 
-[![latest release](https://img.shields.io/github/v/release/gzimbric/TickScope?label=download&color=brightgreen)](https://github.com/gzimbric/TickScope/releases/latest)
-[![build](https://github.com/gzimbric/TickScope/actions/workflows/build.yml/badge.svg)](https://github.com/gzimbric/TickScope/actions/workflows/build.yml)
+[![build](https://github.com/gzimbric/TickScope/actions/workflows/build.yml/badge.svg?branch=nextgen)](https://github.com/gzimbric/TickScope/actions/workflows/build.yml?query=branch%3Anextgen)
 [![licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue.svg)](LICENSE)
 [![Paper 1.18.2+](https://img.shields.io/badge/Paper-1.18.2%2B-orange.svg)](https://papermc.io)
 [![Folia](https://img.shields.io/badge/Folia-supported-8a5cf5.svg)](https://papermc.io/software/folia)
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-red.svg)](https://adoptium.net)
+
+> **This is the 2.0 development branch.** It documents the Prometheus-native metric schema —
+> base-unit seconds, a `statistic` label, canonical `_bytes` suffixes — which **no released jar
+> implements yet**. Every published release is 1.x and uses the previous names, so do not pair
+> this page with a downloaded release. Build from this branch, or take the jar from a
+> [nextgen CI run](https://github.com/gzimbric/TickScope/actions/workflows/build.yml?query=branch%3Anextgen).
+> For the released schema, read the [main branch README](https://github.com/gzimbric/TickScope/blob/main/README.md).
 
 TickScope is a lightweight Prometheus exporter for Minecraft Paper and Folia servers. The
 dependency-free plugin exposes tick health, players, per-world counters, JVM and CPU statistics,
@@ -34,7 +40,9 @@ mc_world_entities_by_type{world="world",type="chicken"} 35
 
 ## Quick start
 
-1. [Download the latest release](https://github.com/gzimbric/TickScope/releases/latest).
+1. Build this branch with `mvn -B clean package`, or download the jar from a
+   [nextgen CI run](https://github.com/gzimbric/TickScope/actions/workflows/build.yml?query=branch%3Anextgen).
+   Released downloads are 1.x and do **not** use the metric names on this page.
 2. Put `TickScope-*.jar` in the server's `plugins/` directory and restart.
 3. Scrape the default endpoint at `http://127.0.0.1:9101/metrics`.
 
@@ -60,7 +68,9 @@ one Paper server or a network of independently labeled backends.
 
 ## Documentation
 
-The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickScope/wiki):
+The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickScope/wiki). Its
+pages describe the released 1.x schema; the 2.0 names on this page are documented on the wiki's
+`nextgen` branch until 2.0 ships.
 
 | Guide | Covers |
 |---|---|
@@ -84,9 +94,14 @@ Paper exposes a single server tick, so TickScope publishes exact `mc_tick_durati
 intentionally absent and are replaced by `mc_folia_region_tps` summaries sampled at online player
 locations. Servers exposing regional average tick times, including Canvas, also receive
 `mc_folia_region_tick_duration_seconds`; this is average tick duration per player-active region
-rather than a global percentile. Entity-by-type metrics are disabled on Folia because a world-wide entity walk would
-cross region ownership boundaries. Other server, world, player, event, JVM, and process metrics
-remain available.
+rather than a global percentile. Per-world entity totals, tile-entity totals, and the entity-type breakdown are
+unavailable on Folia, because walking a world crosses region ownership boundaries; per-world chunk
+and player counts, and all other server, player, event, JVM, and process metrics, remain
+available.
+
+On Paper those three series come from a slower scan (`entity-types.interval-ticks`, 600 ticks by
+default) rather than from every collection, because counting tile entities walks the loaded chunks
+and, before Minecraft 26, counting entities walked every entity.
 
 ## Download and support
 

@@ -14,8 +14,11 @@ on:
 permissions:
   contents: read
 
+# One group for every workflow that mutates the Modrinth project. Serializing per tag is
+# not enough: a release and a re-synchronization would otherwise run together, each acting
+# on its own stale view of which version is featured.
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  group: modrinth-publish
   cancel-in-progress: false
 
 jobs:
@@ -23,11 +26,24 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      GH_REPO: ${{ github.repository }}
     steps:
-      - uses: actions/checkout@v7
+      # Two checkouts on purpose. Release tooling and release notes always come from the
+      # release branch, so a tag cut before a script existed can still be republished;
+      # the jar is always built from the tagged source.
+      - name: Check out release tooling
+        uses: actions/checkout@v7
         with:
+          ref: main
           fetch-depth: 0
-          ref: ${{ env.RELEASE_TAG }}
+          path: tooling
+
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          path: source
 
       - uses: actions/setup-java@v5
         with:
@@ -35,57 +51,107 @@ jobs:
           distribution: temurin
           cache: maven
 
-      - name: Validate version tag
+      - name: Validate release tag
         id: version
+        working-directory: source
         run: |
           version=$(sed -n '0,/<version>/{s:.*<version>\([^<]*\)</version>.*:\1:p}' pom.xml)
           test "$RELEASE_TAG" = "v$version"
-          git rev-parse --verify "refs/tags/$RELEASE_TAG"
+          commit=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+
+          # A tag pushed on any other branch must not be able to publish. nextgen in
+          # particular carries a different metric schema, so an accidental v-tag there
+          # would ship a breaking change as a patch release.
+          git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "::error::$RELEASE_TAG ($commit) is not contained in origin/main; refusing to publish" >&2
+            exit 1
+          fi
+
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "Publishing $RELEASE_TAG from $commit"
 
       - name: Build and test
-        run: mvn -B clean verify
+        working-directory: source
+        env:
+          RELEASE_COMMIT: ${{ steps.version.outputs.commit }}
+        run: |
+          # The tagged POM must pin archive timestamps, otherwise the jar is not
+          # reproducible and neither the retry check below nor a user rebuilding the tag
+          # can verify the published bytes.
+          stamp=$(sed -n 's:.*<project.build.outputTimestamp>\([^<]*\)</project.build.outputTimestamp>.*:\1:p' pom.xml)
+          if [[ -z "$stamp" ]]; then
+            echo "::error::pom.xml does not set project.build.outputTimestamp; the build would not be reproducible" >&2
+            exit 1
+          fi
+          echo "Reproducible build timestamp: $stamp (commit $RELEASE_COMMIT)"
+          mvn -B clean verify
 
       - name: Prepare release files and notes
         env:
-          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           artifact_name="TickScope-$VERSION.jar"
-          artifact="target/$artifact_name"
+          artifact="source/target/$artifact_name"
           test -f "$artifact"
-          (cd target && sha256sum "$artifact_name") > "$artifact.sha256"
+          (cd source/target && sha256sum "$artifact_name") > "$artifact.sha256"
 
-          previous=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')
-          if [[ -n "$previous" && "$previous" != "$RELEASE_TAG" ]]; then
-            range="$previous..$RELEASE_TAG"
-          else
-            range="$RELEASE_TAG"
-          fi
-          {
-            echo "## Changes"
-            echo
-            git log --no-merges --pretty='- %s' "$range"
-            echo
-            echo "**Full changelog:** https://github.com/$GITHUB_REPOSITORY/compare/$previous...$RELEASE_TAG"
-          } > "$RUNNER_TEMP/release-notes.md"
+          # The predecessor comes from the tag's own ancestry, not from publication order,
+          # so a maintenance release cut after a newer major still compares against the
+          # version it actually follows.
+          previous=$(cd tooling && git describe --tags --abbrev=0 "$RELEASE_TAG^" 2>/dev/null || true)
+          echo "Previous tag by ancestry: ${previous:-<none>}"
+          CHANGELOG=tooling/CHANGELOG.md \
+            bash tooling/.github/scripts/release-notes.sh "$VERSION" "$previous" \
+            > "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
+
+      - name: Resolve release standing
+        id: standing
+        run: |
+          # Featured/latest follows semantic version order, not publication order, so
+          # publishing 1.3.1 after 2.0.0 does not demote 2.0.0.
+          newest=$(cd tooling && git tag --sort=-v:refname | head -1)
+          if [[ "$newest" == "$RELEASE_TAG" ]]; then newest_release=true; else newest_release=false; fi
+          echo "newest=$newest_release" >> "$GITHUB_OUTPUT"
+          echo "$RELEASE_TAG newest by semver: $newest_release (highest tag $newest)"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           VERSION: ${{ steps.version.outputs.version }}
+          NEWEST: ${{ steps.standing.outputs.newest }}
         run: |
-          artifact="target/TickScope-$VERSION.jar"
+          artifact="source/target/TickScope-$VERSION.jar"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            published=$(mktemp -d)
+            if gh release download "$RELEASE_TAG" --pattern "TickScope-$VERSION.jar" \
+                 --dir "$published" >/dev/null 2>&1; then
+              local_sum=$(sha256sum "$artifact" | cut -d' ' -f1)
+              published_sum=$(sha256sum "$published/TickScope-$VERSION.jar" | cut -d' ' -f1)
+              if [[ "$local_sum" != "$published_sum" ]]; then
+                echo "::error::Rebuilt jar differs from the asset already published as $RELEASE_TAG." >&2
+                echo "  published: $published_sum" >&2
+                echo "  rebuilt:   $local_sum" >&2
+                exit 1
+              fi
+              echo "Rebuilt jar is byte-identical to the published asset."
+            fi
             gh release upload "$RELEASE_TAG" "$artifact" "$artifact.sha256" --clobber
           else
             gh release create "$RELEASE_TAG" "$artifact" "$artifact.sha256" \
               --verify-tag --title "TickScope $RELEASE_TAG" \
+              --latest="$NEWEST" \
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
 
       - name: Publish Modrinth release
         env:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
+          MODRINTH_FEATURE: ${{ steps.standing.outputs.newest }}
+          REPO_ROOT: tooling
           VERSION: ${{ steps.version.outputs.version }}
-        run: bash .github/scripts/publish-modrinth.sh "$VERSION" "target/TickScope-$VERSION.jar" "$RUNNER_TEMP/release-notes.md"
+        run: |
+          bash tooling/.github/scripts/publish-modrinth.sh "$VERSION" \
+            "source/target/TickScope-$VERSION.jar" "$RUNNER_TEMP/release-notes.md"
