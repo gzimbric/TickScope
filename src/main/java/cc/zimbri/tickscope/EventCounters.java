@@ -52,7 +52,9 @@ final class EventCounters implements Listener {
         if (a != null) a.increment();
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    // No ignoreCancelled here: AsyncPlayerPreLoginEvent does not implement Cancellable, so the
+    // flag would only imply a guard that does not exist. The result check below is the filter.
+    @EventHandler(priority = EventPriority.MONITOR)
     public void onLogin(AsyncPlayerPreLoginEvent e) {
         recordLogin(e.getLoginResult());
     }
@@ -74,7 +76,9 @@ final class EventCounters implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onChat(AsyncChatEvent e) { bump("chat"); }
 
-    @EventHandler(priority = EventPriority.MONITOR)
+    // EntityDeathEvent is cancellable, so a plugin that revives the player cancels it before
+    // this MONITOR handler runs; counting it anyway reported deaths that never happened.
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent e) { bump("death"); }
 
     Map<String, Long> snapshot() {
