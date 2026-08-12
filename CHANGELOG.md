@@ -23,6 +23,9 @@ so this file is the one place a user-facing change gets described.
 - Readings the platform cannot supply are omitted instead of reported as zero. CPU load on a JVM
   that does not expose it no longer looks like an idle server, and player ping is published only
   when a player was actually measured.
+- On Folia, a batch of per-player samples that finishes late is now used rather than thrown
+  away. With several regions lagging at staggered times no batch ever finished before the
+  next began, so ping and regional figures could stay frozen at the last success.
 - Deaths cancelled by another plugin are no longer counted.
 - A configuration value of the wrong type is now rejected with the setting named. `port: "9200"`
   previously bound the default port and `per-world: "false"` silently stayed enabled.
