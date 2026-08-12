@@ -4,6 +4,37 @@ Release notes are written here by hand. The release workflow reads the section m
 version being tagged and uses it verbatim for the GitHub release and the Modrinth changelog,
 so this file is the one place a user-facing change gets described.
 
+## 1.4.0
+
+- **The metrics endpoint can no longer be silenced by a stalled client.** A connection that sent
+  a partial request previously held the only HTTP worker indefinitely, and every scrape timed out
+  until that client disconnected — with no token required, since parsing stalls before
+  authentication. The endpoint now runs on its own socket with per-connection deadlines and
+  recovers on its own. Still no runtime dependencies.
+- `Authorization: bearer <token>` is now accepted alongside `Bearer`, as the HTTP specification
+  requires. A scrape configured with a lowercase scheme used to fail like a mistyped token.
+- **Per-world entity and tile-entity totals moved to the slower scan interval**
+  (`entity-types.interval-ticks`). Counting tile entities walks every loaded chunk, and before
+  Minecraft 26 counting entities walked every entity, so neither belonged on the 5-second
+  collection cycle. `mc_world_chunks` and `mc_world_players` are unchanged and still sampled
+  every collection.
+- These three series are now omitted on Folia rather than read from the global region, which does
+  not own the world data they walk.
+- Readings the platform cannot supply are omitted instead of reported as zero. CPU load on a JVM
+  that does not expose it no longer looks like an idle server, and player ping is published only
+  when a player was actually measured.
+- Deaths cancelled by another plugin are no longer counted.
+- A configuration value of the wrong type is now rejected with the setting named. `port: "9200"`
+  previously bound the default port and `per-world: "false"` silently stayed enabled.
+- `/tickscope reload` reports what actually happened, including when a rollback failed, and two
+  simultaneous reloads on Folia can no longer leave an endpoint running that nothing can close.
+- The entity-type series survive a reload instead of disappearing until the next scan, and
+  `/tickscope status` prints a valid URL for an IPv6 bind address.
+- The bundled Grafana dashboard gained a Folia regions row; its tick panels were blank on Folia,
+  which is the one platform where those metrics do not exist.
+- Release jars are now reproducible, so a download can be checked against its published checksum
+  by rebuilding the tag.
+
 ## 1.3.0
 
 - **Folia and Canvas support.** TickScope now runs on Folia-compatible servers and exports
