@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 # Publish one release jar to Modrinth and keep the project page synchronized.
+#
+# REPO_ROOT selects where README.md and the game-version list are read from, so a release
+# workflow can build from a tag while taking page content from the release branch.
 set -euo pipefail
 
 if [[ $# -ne 3 ]]; then
@@ -12,6 +15,7 @@ fi
 VERSION=$1
 ARTIFACT=$2
 CHANGELOG_FILE=$3
+REPO_ROOT=${REPO_ROOT:-.}
 # Featuring is for the newest release only; a back-sync of an older version must not
 # take the flag away from it.
 FEATURE=${MODRINTH_FEATURE:-true}
@@ -24,7 +28,8 @@ USER_AGENT="User-Agent: gzimbric/TickScope release workflow (github.com/gzimbric
 # The artifact is only needed when this version has not been uploaded yet, so a re-run that
 # just re-synchronizes the page does not have to rebuild the jar.
 [[ -f "$CHANGELOG_FILE" ]] || { echo "missing changelog: $CHANGELOG_FILE" >&2; exit 2; }
-jq -e 'type == "array" and length > 0' .github/modrinth-game-versions.json >/dev/null
+[[ -f "$REPO_ROOT/README.md" ]] || { echo "missing $REPO_ROOT/README.md" >&2; exit 2; }
+jq -e 'type == "array" and length > 0' "$REPO_ROOT/.github/modrinth-game-versions.json" >/dev/null
 
 versions=$(curl --fail-with-body -sS -H "$AUTH_HEADER" -H "$USER_AGENT" \
   "$API/project/$PROJECT_ID/version?include_changelog=false")
@@ -35,7 +40,7 @@ changelog=$(<"$CHANGELOG_FILE")
 
 if [[ -z "$version_id" ]]; then
   [[ -f "$ARTIFACT" ]] || { echo "missing artifact: $ARTIFACT" >&2; exit 2; }
-  game_versions=$(<.github/modrinth-game-versions.json)
+  game_versions=$(<"$REPO_ROOT/.github/modrinth-game-versions.json")
   data=$(jq -cn \
     --arg name "TickScope $VERSION" \
     --arg version "$VERSION" \
@@ -56,6 +61,21 @@ if [[ -z "$version_id" ]]; then
   echo "Published Modrinth version $VERSION ($version_id)."
 else
   echo "Modrinth version $VERSION already exists ($version_id); skipping upload."
+  # Skipping the upload is only safe if the bytes match. Otherwise a retry would leave
+  # GitHub and Modrinth serving different jars under one version number.
+  if [[ -f "$ARTIFACT" ]]; then
+    published_sha512=$(jq -r --arg version "$VERSION" \
+      '[.[] | select(.version_number == $version) | .files[] | select(.primary) | .hashes.sha512][0] // empty' \
+      <<<"$versions")
+    local_sha512=$(sha512sum "$ARTIFACT" | cut -d' ' -f1)
+    if [[ -n "$published_sha512" && "$published_sha512" != "$local_sha512" ]]; then
+      echo "the jar built here does not match the file already published as $VERSION" >&2
+      echo "  published sha512: $published_sha512" >&2
+      echo "  local sha512:     $local_sha512" >&2
+      exit 1
+    fi
+    echo "Local jar is byte-identical to the published Modrinth file."
+  fi
 fi
 
 # Always push the changelog, so correcting release notes after the fact reaches Modrinth too.
@@ -74,13 +94,21 @@ if [[ "$FEATURE" == true ]]; then
   done < <(jq -r --arg current "$version_id" '.[] | select(.featured and .id != $current) | .id' <<<"$versions")
 fi
 
-# Modrinth does not update the project body when a version is uploaded.
+# Modrinth does not update the project body when a version is uploaded. Relative repository
+# links also have to become absolute, and the GitHub download calls to action are removed:
+# Modrinth has its own Files tab, and sending readers to GitHub from this page costs the
+# project the download it was about to receive.
 body=$(perl -0pe '
   s#src="assets/icon\.png"#src="https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/icon.png"#g;
   s#src="assets/grafana/dashboard-preview\.png"#src="https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/dashboard-preview.png"#g;
   s#\]\(assets/grafana/tickscope-dashboard\.json\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/tickscope-dashboard.json)#g;
-  s#\]\(LICENSE\)#](https://github.com/gzimbric/TickScope/blob/main/LICENSE)#g
-' README.md)
+  s#\]\(LICENSE\)#](https://github.com/gzimbric/TickScope/blob/main/LICENSE)#g;
+  s#^\[!\[latest release\][^\n]*\n##m;
+  s#^1\. \[Download the latest release\]\([^)]*\)\.#1. Download the latest jar from the **Files** tab at the top of this page.#m;
+  s#^- \[Download on GitHub\]\([^)]*\)\n##m;
+  s#^- \[Download on Modrinth\]\([^)]*\)\n##m;
+  s#^## Download and support$### Support#m;
+' "$REPO_ROOT/README.md")
 project_data=$(jq -cn --arg body "$body" \
   --arg wiki "https://github.com/gzimbric/TickScope/wiki" \
   '{body:$body,wiki_url:$wiki}')
