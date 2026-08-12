@@ -15,15 +15,16 @@ on:
 permissions:
   contents: read
 
+# Shared with release.yml: both mutate the same Modrinth project and must never overlap.
 concurrency:
-  group: modrinth-sync
+  group: modrinth-publish
   cancel-in-progress: false
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -31,7 +32,11 @@ jobs:
         env:
           VERSION: ${{ inputs.version }}
         run: |
-          previous=$(git tag --sort=-v:refname | grep -v "^v$VERSION$" | head -1)
+          git rev-parse --verify "refs/tags/v$VERSION^{commit}" >/dev/null
+          # The predecessor must come from this tag's ancestry. Taking the newest other tag
+          # produced a backwards compare link when an older version was re-synchronized.
+          previous=$(git describe --tags --abbrev=0 "v$VERSION^" 2>/dev/null || true)
+          echo "Previous tag by ancestry: ${previous:-<none>}"
           bash .github/scripts/release-notes.sh "$VERSION" "$previous" \
             > "$RUNNER_TEMP/release-notes.md"
           cat "$RUNNER_TEMP/release-notes.md"
@@ -41,14 +46,14 @@ jobs:
           MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
           VERSION: ${{ inputs.version }}
         run: |
-          # Only the newest release carries the featured flag, so back-syncing an older
-          # version must leave it alone.
+          # Only the highest semantic version carries the featured flag, so back-syncing an
+          # older version must leave it alone.
           newest=$(git tag --sort=-v:refname | head -1)
           if [[ "$newest" == "v$VERSION" ]]; then
             export MODRINTH_FEATURE=true
           else
             export MODRINTH_FEATURE=false
           fi
-          echo "featuring: $MODRINTH_FEATURE (newest tag $newest)"
+          echo "featuring: $MODRINTH_FEATURE (highest tag $newest)"
           bash .github/scripts/publish-modrinth.sh "$VERSION" \
             "target/TickScope-$VERSION.jar" "$RUNNER_TEMP/release-notes.md"
