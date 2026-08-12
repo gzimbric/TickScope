@@ -558,6 +558,170 @@
         "y": 14
       },
       "panels": [],
+      "title": "Folia regions",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Folia and Canvas only. Folia has no single server tick, so the panels above stay empty there and these take their place; on Paper it is the other way round. Sampled at the locations of online players, so it is empty with nobody online.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mc_folia_region_tps{server=~\"$server\",statistic=\"avg\"}",
+          "legendFormat": "{{window}} avg",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mc_folia_region_tps{server=~\"$server\",statistic=\"min\"}",
+          "legendFormat": "{{window}} worst region",
+          "refId": "B"
+        }
+      ],
+      "title": "Regional TPS (Folia)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Folia and Canvas only. Folia has no single server tick, so the panels above stay empty there and these take their place; on Paper it is the other way round. Regional MSPT needs a server that exposes per-region tick times, which today means Canvas; pure Folia reports regional TPS only.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 25
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mc_folia_region_mspt_ms{server=~\"$server\",statistic=\"avg\"}",
+          "legendFormat": "{{window}} avg",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mc_folia_region_mspt_ms{server=~\"$server\",statistic=\"max\"}",
+          "legendFormat": "{{window}} worst region",
+          "refId": "B"
+        }
+      ],
+      "title": "Regional tick time (Folia)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "panels": [],
       "title": "Memory and CPU",
       "type": "row"
     },
@@ -587,7 +751,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 15
+        "y": 24
       },
       "options": {
         "legend": {
@@ -647,7 +811,7 @@
         "type": "prometheus",
         "uid": "${DS_PROMETHEUS}"
       },
-      "description": "Host well above process means something else on mcbox is competing.",
+      "description": "System load is reported for the JVM's operating environment, so on a containerised server it reflects the container's cgroup rather than the machine.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -668,7 +832,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 15
+        "y": 24
       },
       "options": {
         "legend": {
@@ -704,7 +868,7 @@
           },
           "expr": "mc_system_cpu_load_ratio{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "whole host",
+          "legendFormat": "host or container",
           "range": true,
           "refId": "B"
         }
@@ -718,7 +882,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 32
       },
       "panels": [],
       "title": "JVM",
@@ -750,7 +914,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 33
       },
       "options": {
         "legend": {
@@ -809,7 +973,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 33
       },
       "options": {
         "legend": {
@@ -870,7 +1034,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 41
       },
       "panels": [],
       "title": "Worlds",
@@ -902,7 +1066,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 33
+        "y": 42
       },
       "options": {
         "legend": {
@@ -961,7 +1125,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 33
+        "y": 42
       },
       "options": {
         "legend": {
@@ -1020,7 +1184,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 33
+        "y": 42
       },
       "options": {
         "legend": {
@@ -1079,7 +1243,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 41
+        "y": 50
       },
       "options": {
         "legend": {
@@ -1138,7 +1302,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 41
+        "y": 50
       },
       "options": {
         "legend": {
@@ -1177,7 +1341,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 58
       },
       "panels": [],
       "title": "Players and events",
@@ -1209,7 +1373,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 50
+        "y": 59
       },
       "options": {
         "legend": {
@@ -1268,7 +1432,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 50
+        "y": 59
       },
       "options": {
         "legend": {
@@ -1338,7 +1502,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 50
+        "y": 59
       },
       "options": {
         "legend": {
@@ -1377,7 +1541,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 67
       },
       "panels": [],
       "title": "Exporter",
@@ -1409,7 +1573,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 68
       },
       "options": {
         "legend": {
@@ -1479,7 +1643,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 59
+        "y": 68
       },
       "options": {
         "legend": {
@@ -1526,9 +1690,9 @@
     "to": "now"
   },
   "timezone": "browser",
-  "title": "TickScope — Minecraft Server",
+  "title": "TickScope \u2014 Minecraft Server",
   "uid": "tickscope",
-  "description": "Minecraft Paper server health and performance from TickScope Prometheus metrics.",
+  "description": "TickScope metrics for Paper, Purpur, Folia and Canvas. Tick performance panels populate on Paper; the Folia regions row populates on Folia and Canvas.",
   "__inputs": [
     {
       "name": "DS_PROMETHEUS",

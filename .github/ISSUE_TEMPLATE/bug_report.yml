@@ -43,7 +43,7 @@ body:
     attributes:
       label: Server version
       description: The full output of `/version`.
-      placeholder: "Paper 26.2-100-main@714512e"
+      placeholder: "Paper 26.2-100-main@714512e, or Folia/Canvas equivalent"
     validations:
       required: true
 
@@ -91,7 +91,7 @@ body:
     attributes:
       label: Before submitting
       options:
-        - label: I am running Paper (or a Paper fork). Spigot, Bukkit and Folia are not supported.
+        - label: I am running Paper, Purpur, Folia or Canvas. Spigot, Bukkit, Velocity and BungeeCord are not supported.
           required: true
         - label: I searched existing issues and this has not already been reported.
           required: true
