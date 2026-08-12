@@ -35,12 +35,20 @@ interface PlatformScheduler {
     }
 
     static PlatformScheduler create(Plugin plugin) {
+        boolean folia;
         try {
             Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            folia = true;
+        } catch (ClassNotFoundException notFolia) {
+            folia = false;
+        }
+        if (!folia) return new Paper(plugin);
+        try {
             return new Folia(plugin);
-        } catch (ClassNotFoundException e) {
-            return new Paper(plugin);
         } catch (ReflectiveOperationException e) {
+            // Detection already established that this is Folia. A scheduler class that has moved
+            // is an API break and must say so; sharing a catch with the detection lookup would
+            // have silently selected Paper's scheduler, which Folia then refuses to run.
             throw new IllegalStateException("Folia scheduler API is unavailable", e);
         }
     }
