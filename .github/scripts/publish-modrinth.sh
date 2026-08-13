@@ -53,11 +53,22 @@ if [[ -z "$version_id" ]]; then
       featured:$feature,status:"listed",environment:"server_only",file_parts:["artifact"],
       primary_file:"artifact",dependencies:[]}')
 
-  response=$(curl --fail-with-body -sS -X POST -H "$AUTH_HEADER" -H "$USER_AGENT" \
+  # Capture the status separately: on failure curl's body goes to stdout, which is captured
+  # here, so a rejected upload otherwise failed with nothing but "error: 400".
+  response=$(curl -sS -w '\n%{http_code}' -X POST -H "$AUTH_HEADER" -H "$USER_AGENT" \
     -F "data=$data;type=application/json" \
     -F "artifact=@$ARTIFACT;type=application/java-archive" \
     "$API/version")
-  version_id=$(jq -er '.id' <<<"$response")
+  status=$(tail -n1 <<<"$response")
+  body=$(sed '$d' <<<"$response")
+  if [[ "$status" != 2* ]]; then
+    echo "Modrinth rejected the upload with HTTP $status:" >&2
+    echo "$body" >&2
+    echo "--- request metadata sent (artifact omitted) ---" >&2
+    jq . <<<"$data" >&2 || echo "$data" >&2
+    exit 1
+  fi
+  version_id=$(jq -er '.id' <<<"$body")
   echo "Published Modrinth version $VERSION ($version_id)."
 else
   echo "Modrinth version $VERSION already exists ($version_id); skipping upload."
