@@ -53,10 +53,17 @@ if [[ -z "$version_id" ]]; then
       featured:$feature,status:"listed",environment:"server_only",file_parts:["artifact"],
       primary_file:"artifact",dependencies:[]}')
 
+  # The metadata goes via a file, never inline. curl -F treats ';' as the separator before
+  # ";type=", so an inline value is silently truncated at the first semicolon the release notes
+  # happen to contain, and Modrinth rejects the half a JSON document that arrives.
+  metadata=$(mktemp)
+  trap 'rm -f "$metadata"' EXIT
+  printf '%s' "$data" > "$metadata"
+
   # Capture the status separately: on failure curl's body goes to stdout, which is captured
   # here, so a rejected upload otherwise failed with nothing but "error: 400".
   response=$(curl -sS -w '\n%{http_code}' -X POST -H "$AUTH_HEADER" -H "$USER_AGENT" \
-    -F "data=$data;type=application/json" \
+    -F "data=<$metadata;type=application/json" \
     -F "artifact=@$ARTIFACT;type=application/java-archive" \
     "$API/version")
   status=$(tail -n1 <<<"$response")
