@@ -6,7 +6,7 @@
 
   <groupId>cc.zimbri</groupId>
   <artifactId>tickscope</artifactId>
-  <version>1.4.0</version>
+  <version>1.5.0-SNAPSHOT</version>
   <packaging>jar</packaging>
   <name>TickScope</name>
   <description>Prometheus exporter for Paper and Folia. No runtime dependencies.</description>
