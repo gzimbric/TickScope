@@ -53,11 +53,29 @@ if [[ -z "$version_id" ]]; then
       featured:$feature,status:"listed",environment:"server_only",file_parts:["artifact"],
       primary_file:"artifact",dependencies:[]}')
 
-  response=$(curl --fail-with-body -sS -X POST -H "$AUTH_HEADER" -H "$USER_AGENT" \
-    -F "data=$data;type=application/json" \
+  # The metadata goes via a file, never inline. curl -F treats ';' as the separator before
+  # ";type=", so an inline value is silently truncated at the first semicolon the release notes
+  # happen to contain, and Modrinth rejects the half a JSON document that arrives.
+  metadata=$(mktemp)
+  trap 'rm -f "$metadata"' EXIT
+  printf '%s' "$data" > "$metadata"
+
+  # Capture the status separately: on failure curl's body goes to stdout, which is captured
+  # here, so a rejected upload otherwise failed with nothing but "error: 400".
+  response=$(curl -sS -w '\n%{http_code}' -X POST -H "$AUTH_HEADER" -H "$USER_AGENT" \
+    -F "data=<$metadata;type=application/json" \
     -F "artifact=@$ARTIFACT;type=application/java-archive" \
     "$API/version")
-  version_id=$(jq -er '.id' <<<"$response")
+  status=$(tail -n1 <<<"$response")
+  body=$(sed '$d' <<<"$response")
+  if [[ "$status" != 2* ]]; then
+    echo "Modrinth rejected the upload with HTTP $status:" >&2
+    echo "$body" >&2
+    echo "--- request metadata sent (artifact omitted) ---" >&2
+    jq . <<<"$data" >&2 || echo "$data" >&2
+    exit 1
+  fi
+  version_id=$(jq -er '.id' <<<"$body")
   echo "Published Modrinth version $VERSION ($version_id)."
 else
   echo "Modrinth version $VERSION already exists ($version_id); skipping upload."
@@ -95,15 +113,17 @@ if [[ "$FEATURE" == true ]]; then
 fi
 
 # Modrinth does not update the project body when a version is uploaded. Relative repository
-# links also have to become absolute, and the GitHub download calls to action are removed:
-# Modrinth has its own Files tab, and sending readers to GitHub from this page costs the
-# project the download it was about to receive.
+# links also have to become absolute, and everything pointing back to GitHub is removed: the
+# whole shields.io badge row and the download calls to action. Modrinth has its own Files tab
+# and shows platform, version and licence in its sidebar, so those badges are duplicated
+# clutter that also sends readers off-platform, costing the download about to happen here.
 body=$(perl -0pe '
   s#src="assets/icon\.png"#src="https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/icon.png"#g;
   s#src="assets/grafana/dashboard-preview\.png"#src="https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/dashboard-preview.png"#g;
   s#\]\(assets/grafana/tickscope-dashboard\.json\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/tickscope-dashboard.json)#g;
   s#\]\(LICENSE\)#](https://github.com/gzimbric/TickScope/blob/main/LICENSE)#g;
-  s#^\[!\[latest release\][^\n]*\n##m;
+  s{^\[!\[[^\n]*\n}{}mg;
+  s{(^\# [^\n]*\n)\n+}{$1\n}m;
   s#^1\. \[Download the latest release\]\([^)]*\)\.#1. Download the latest jar from the **Files** tab at the top of this page.#m;
   s#^- \[Download on GitHub\]\([^)]*\)\n##m;
   s#^- \[Download on Modrinth\]\([^)]*\)\n##m;

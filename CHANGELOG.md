@@ -38,6 +38,14 @@ so this file is the one place a user-facing change gets described.
 - Release jars are now reproducible, so a download can be checked against its published checksum
   by rebuilding the tag.
 
+**Upgrading:** two panels can look empty after this release. `mc_player_ping_avg_ms` and
+`mc_player_ping_max_ms` are absent while nobody is online, and the CPU ratios are absent on a JVM
+that cannot report them, instead of both reading zero. That is the documented "missing series"
+behaviour rather than a removal — add `or vector(0)` where a panel needs a visible zero, exactly
+as the entity-type series already require. Per-world entity and tile-entity totals now refresh
+every `entity-types.interval-ticks` (600 ticks) rather than every collection, so those graphs are
+coarser; they are absent entirely on Folia.
+
 ## 1.3.0
 
 - **Folia and Canvas support.** TickScope now runs on Folia-compatible servers and exports
