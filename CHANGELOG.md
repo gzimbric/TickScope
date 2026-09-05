@@ -4,17 +4,47 @@ Release notes are written here by hand. The release workflow reads the section m
 version being tagged and uses it verbatim for the GitHub release and the Modrinth changelog,
 so this file is the one place a user-facing change gets described.
 
-## Unreleased
+## 1.5.0
 
-- Reject malformed YAML and out-of-range ports before applying configuration changes.
-- Close active and queued HTTP connections on reload or shutdown.
-- Publish Folia sample generations atomically; expired batches publish partial coverage,
-  and stalled players cannot accumulate additional sampling tasks.
-- Remove disabled or excluded cached world metrics immediately on reload.
-- Add collection freshness, failure counters, Folia coverage metrics, and status output.
-- Add exact world exclusions and an optional entity-type allowlist.
-- Add Prometheus alert rules, server names in dashboard legends, collection-health panels,
-  and an optional dashboard with repeated server overview rows.
+- **Collection health is now visible even when scrapes succeed.** New freshness timestamps,
+  enabled-stage gauges, and failure counters distinguish a working HTTP endpoint from a
+  stalled collector. `/tickscope status` also reports collection age and failures.
+- **Eight ready-to-use Prometheus alerts** cover unreachable exporters, stale collections and
+  world scans, sustained low Paper and Folia TPS, high regional MSPT, heap pressure, and
+  incomplete Folia player sampling. The bundle includes tested hold durations and excludes
+  disabled collection stages and unsupported readings.
+- **Folia sampling no longer builds a queue behind a lagging player.** Only one task per
+  player can remain outstanding. An unfinished batch publishes its available readings when
+  the next collection cycle starts, with completed and expected player counts showing the
+  coverage. Expired callbacks cannot overwrite the published results.
+- Folia sample data and its generation are now published atomically, fixing a race where an
+  older callback could overwrite a newer reading after passing the generation check.
+- **World exclusions and an entity-type allowlist** let operators narrow collection scope.
+  `exclude-worlds` skips named worlds before scanning; `entity-types.allowlist` limits the
+  per-type series while preserving full entity totals for included worlds.
+- The Grafana dashboard now includes server names in legends, collection age, collection
+  failures, and Folia player coverage. An additional per-server overview repeats a row for
+  each selected backend.
+- Malformed YAML and missing configuration files now reject a reload instead of silently
+  applying defaults, including an empty authentication token. Oversized port values are
+  rejected before integer conversion can turn them into a different valid port.
+- Reloading or disabling TickScope now closes active and queued HTTP connections, including
+  clients that never read the response. Shutdown no longer leaves those sockets waiting
+  after their deadline watchdog has stopped.
+- Disabling world metrics or narrowing filters removes the corresponding cached series
+  immediately. Still-enabled cached readings survive a reload until the next scan.
+- Scheduled collection exceptions retain the last snapshot, increment failure counters,
+  and retry on the next cycle. Health readings remain available independently of snapshot
+  publication.
+
+**Upgrading:** existing configuration files continue to work; the new filters default to
+including every world and entity type. Add the optional settings manually to use them, and
+re-import the dashboard to see the new panels. Collection-health timestamps and failure
+counters reset on configuration reload. Folia ping and regional summaries can now represent
+partial batches, so consult the coverage metrics alongside them. The default alert thresholds
+assume the standard collection intervals; adjust them if you sample less often. Alertmanager
+must be configured separately to deliver notifications. Setup instructions and metric semantics
+are in the [monitoring guide](https://github.com/gzimbric/TickScope/blob/v1.5.0/docs/monitoring.md).
 
 ## 1.4.0
 
