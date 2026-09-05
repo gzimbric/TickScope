@@ -25,6 +25,29 @@ final class PrometheusWriter {
 
     private PrometheusWriter() {}
 
+    static String render(Snapshot s, CollectionHealth health) {
+        StringBuilder b = new StringBuilder(render(s));
+        String srv = esc(s.serverId());
+        help(b, "mc_collection_enabled", "gauge", "Whether a collection stage is enabled");
+        help(b, "mc_collection_last_success_timestamp_seconds", "gauge", "Last successful collection, Unix seconds; zero before first success");
+        help(b, "mc_collection_failures_total", "counter", "Failed collections or incomplete player batches since configuration activation");
+        health.snapshot().forEach((stage, r) -> {
+            healthLine(b, "mc_collection_enabled", srv, stage, r.enabled() ? 1 : 0);
+            healthLine(b, "mc_collection_last_success_timestamp_seconds", srv, stage, r.lastSuccess());
+            healthLine(b, "mc_collection_failures_total", srv, stage, r.failures());
+            if (stage.equals("players") && r.enabled()) {
+                gauge(b, "mc_folia_player_samples_completed", "Successful pings in the last player batch", srv, r.completed());
+                gauge(b, "mc_folia_player_samples_expected", "Players requested in the last player batch", srv, r.expected());
+            }
+        });
+        return b.toString();
+    }
+
+    private static void healthLine(StringBuilder b, String name, String srv, String stage, double value) {
+        b.append(name).append("{server=\"").append(srv).append("\",stage=\"")
+                .append(stage).append("\"} ").append(num(value)).append('\n');
+    }
+
     static String render(Snapshot s) {
         StringBuilder b = new StringBuilder(8192);
         String srv = esc(s.serverId());

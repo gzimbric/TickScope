@@ -38,6 +38,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Gathers a {@link Snapshot}. Bukkit reads happen on the owning platform scheduler: Paper's main
@@ -57,6 +59,11 @@ final class MetricsCollector {
     private final boolean perWorld;
     private final boolean byType;
     private final EventCounters events;
+    private final Set<String> excludedWorlds;
+    private final Set<String> allowedTypes;
+    private final CollectionHealth health;
+
+    CollectionHealth health() { return health; }
 
     private final OperatingSystemMXBean os =
             (OperatingSystemMXBean) ManagementFactory.getOperatingSystemMXBean();
@@ -73,11 +80,25 @@ final class MetricsCollector {
      * series until the next scan.
      */
     private volatile HeavyWorldData heavy;
-    private volatile PlayerSample foliaPlayers = PlayerSample.EMPTY;
+    private record GeneratedPlayers(long generation, PlayerSample sample) {}
+    private final AtomicReference<GeneratedPlayers> foliaPlayers =
+            new AtomicReference<>(new GeneratedPlayers(0, PlayerSample.EMPTY));
 
     MetricsCollector(String serverId, boolean perWorld, boolean byType, EventCounters events,
                      String tickScopeVersion, String paperVersion, String javaVersion,
                      String platform, HeavyWorldData carried) {
+        this(serverId, perWorld, byType, events, tickScopeVersion, paperVersion, javaVersion,
+                platform, carried, Set.of(), Set.of());
+    }
+
+    MetricsCollector(String serverId, boolean perWorld, boolean byType, EventCounters events,
+                     String tickScopeVersion, String paperVersion, String javaVersion,
+                     String platform, HeavyWorldData carried, Set<String> excludedWorlds,
+                     Set<String> allowedTypes) {
+        this.excludedWorlds = Set.copyOf(excludedWorlds);
+        this.allowedTypes = Set.copyOf(allowedTypes);
+        this.health = new CollectionHealth(!platform.equals("folia") && (perWorld || byType),
+                platform.equals("folia"));
         this.serverId = serverId;
         this.perWorld = perWorld;
         this.byType = byType;
@@ -86,11 +107,17 @@ final class MetricsCollector {
         this.paperVersion = paperVersion;
         this.javaVersion = javaVersion;
         this.platform = platform;
-        this.heavy = carried == null ? HeavyWorldData.EMPTY : carried;
+        HeavyWorldData cache = carried == null ? HeavyWorldData.EMPTY : carried;
+        this.heavy = new HeavyWorldData(
+                perWorld ? cache.totals().stream()
+                        .filter(w -> includedWorld(w.name())).toList() : List.of(),
+                byType ? cache.types().stream()
+                        .filter(t -> includedWorld(t.world()) && includedType(t.type())).toList() : List.of(),
+                perWorld || byType ? cache.seconds() : 0d);
     }
 
     Snapshot collectPaper() {
-        return collect(false, 0);
+        return monitoredCollect(false, 0);
     }
 
     /**
@@ -98,21 +125,50 @@ final class MetricsCollector {
      *                      supplies ping only completes after this snapshot is published.
      */
     Snapshot collectFolia(int onlinePlayers) {
-        return collect(true, onlinePlayers);
+        return monitoredCollect(true, onlinePlayers);
     }
 
     Snapshot initialSnapshot() {
         return Snapshot.empty(serverId, tickScopeVersion, paperVersion, javaVersion, platform);
     }
 
-    void updateFoliaPlayers(PlayerSample players) {
-        foliaPlayers = players;
+    boolean updateFoliaPlayers(long generation, PlayerSample players) {
+        GeneratedPlayers current;
+        do {
+            current = foliaPlayers.get();
+            if (current.generation() >= generation) return false;
+        } while (!foliaPlayers.compareAndSet(current, new GeneratedPlayers(generation, players)));
+        // Publication and health belong to the same accepted generation.
+        synchronized (health) {
+            if (foliaPlayers.get().generation() == generation) {
+                health.players(players.pingSamples(), players.online());
+            }
+        }
+        return true;
+    }
+
+    PlayerSample foliaPlayerSample() {
+        return foliaPlayers.get().sample();
     }
 
     /** The cached scan results, so a replacement collector can start where this one left off. */
     HeavyWorldData heavyWorldData() {
         return heavy;
     }
+
+    private Snapshot monitoredCollect(boolean folia, int online) {
+        try {
+            Snapshot sample = collect(folia, online);
+            health.success("main");
+            return sample;
+        } catch (RuntimeException e) {
+            health.failure("main");
+            throw e;
+        }
+    }
+
+    boolean includedWorld(String world) { return !excludedWorlds.contains(world); }
+    boolean includedType(String type) { return allowedTypes.isEmpty() || allowedTypes.contains(type); }
 
     private Snapshot collect(boolean folia, int foliaOnlinePlayers) {
         long started = System.nanoTime();
@@ -127,6 +183,7 @@ final class MetricsCollector {
         List<Snapshot.WorldStat> worlds = new ArrayList<>();
         if (perWorld) {
             for (World w : Bukkit.getWorlds()) {
+                if (!includedWorld(w.getName())) continue;
                 // Only genuine counter reads belong here: getFullChunksCount and the world's
                 // own player list. Entity and tile-entity totals iterate, so they live on the
                 // slower scan instead.
@@ -134,7 +191,7 @@ final class MetricsCollector {
             }
         }
 
-        PlayerSample playerSample = folia ? foliaPlayers : paperPlayers();
+        PlayerSample playerSample = folia ? foliaPlayerSample() : paperPlayers();
         HeavyWorldData scan = heavy;
 
         Snapshot.Jvm jvm = jvm();
@@ -146,7 +203,8 @@ final class MetricsCollector {
                 folia ? foliaOnlinePlayers : playerSample.online(), Bukkit.getMaxPlayers(),
                 Bukkit.getPluginManager().getPlugins().length,
                 playerSample.pingAvgMs(), playerSample.pingMaxMs(), playerSample.pingSamples(),
-                List.copyOf(worlds), scan.totals(), scan.types(),
+                List.copyOf(worlds), perWorld ? scan.totals() : List.of(),
+                byType ? scan.types() : List.of(),
                 playerSample.regionTps(), playerSample.regionMspt(),
                 jvm, proc, eventCounts);
     }
@@ -174,10 +232,21 @@ final class MetricsCollector {
      * are gathered here, well away from the collection interval.
      */
     void collectHeavyWorldData() {
+        try {
+            scanWorlds();
+            health.success("world");
+        } catch (RuntimeException e) {
+            health.failure("world");
+            throw e;
+        }
+    }
+
+    private void scanWorlds() {
         long started = System.nanoTime();
         List<Snapshot.WorldTotals> totals = new ArrayList<>();
         List<Snapshot.TypeCount> types = new ArrayList<>();
         for (World w : Bukkit.getWorlds()) {
+            if (!includedWorld(w.getName())) continue;
             if (perWorld) {
                 totals.add(new Snapshot.WorldTotals(
                         w.getName(), w.getEntityCount(), w.getTileEntityCount()));
@@ -185,7 +254,8 @@ final class MetricsCollector {
             if (byType) {
                 Map<String, Integer> byTypeName = new HashMap<>();
                 for (Entity e : w.getEntities()) {
-                    byTypeName.merge(typeName(e.getType()), 1, Integer::sum);
+                    String type = typeName(e.getType());
+                    if (includedType(type)) byTypeName.merge(type, 1, Integer::sum);
                 }
                 byTypeName.forEach((type, n) -> types.add(new Snapshot.TypeCount(w.getName(), type, n)));
             }

@@ -58,6 +58,16 @@ a network you do not fully control.
 and select the Prometheus data source that scrapes TickScope. A built-in server selector supports
 one Paper server or a network of independently labeled backends.
 
+## Collection health and alerting
+
+Track collection freshness and failures even when the HTTP endpoint remains reachable.
+Folia sampling publishes partial coverage and bounds outstanding work per player. World
+exclusions and an entity-type allowlist help control collection scope.
+
+See [health metrics, filters, and setup instructions](docs/monitoring.md), the
+[Prometheus alert rules](assets/prometheus/tickscope-alerts.yml), and the optional
+[per-server dashboard](assets/grafana/tickscope-per-server-dashboard.json).
+
 ## Documentation
 
 The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickScope/wiki):

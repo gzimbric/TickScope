@@ -32,3 +32,24 @@ jobs:
           name: TickScope
           path: target/TickScope-*.jar
           if-no-files-found: error
+
+  monitoring:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate dashboard JSON and documentation links
+        run: |
+          python3 -m json.tool assets/grafana/tickscope-dashboard.json > /dev/null
+          python3 -m json.tool assets/grafana/tickscope-per-server-dashboard.json > /dev/null
+          python3 .github/scripts/check-markdown-links.py README.md docs
+      - name: Validate alert rules and behavior
+        env:
+          PROMETHEUS_VERSION: 3.14.0
+        run: |
+          archive="prometheus-$PROMETHEUS_VERSION.linux-amd64"
+          curl --fail --location --retry 3 \
+            "https://github.com/prometheus/prometheus/releases/download/v$PROMETHEUS_VERSION/$archive.tar.gz" \
+            -o "$RUNNER_TEMP/prometheus.tar.gz"
+          tar -xzf "$RUNNER_TEMP/prometheus.tar.gz" -C "$RUNNER_TEMP" --strip-components=1 "$archive/promtool"
+          "$RUNNER_TEMP/promtool" check rules assets/prometheus/tickscope-alerts.yml
+          "$RUNNER_TEMP/promtool" test rules assets/prometheus/tickscope-alerts.test.yml

@@ -25,8 +25,8 @@ path: "/metrics"
 auth-token: ""
 
 # How often to sample on Paper's main thread or Folia's global region. 100 ticks = 5s.
-# Every reading here is O(1) — Paper keeps entity/chunk/tile counts as counters — so
-# this is cheap, but sampling faster than Prometheus scrapes buys nothing.
+# Entity and tile-entity walks run separately on the slower scan cadence below.
+# Sampling faster than Prometheus scrapes usually buys nothing.
 collection-interval-ticks: 100
 
 # Per-world entity / tile-entity / chunk / player series.
@@ -43,3 +43,11 @@ entity-types:
   # off keeps the cheaper per-world totals; interval-ticks still governs both.
   enabled: true
   interval-ticks: 600
+  # Optional registry names to export, e.g. [zombie, chicken]. Empty means all types.
+  # Filters the breakdown only; per-world entity totals still include every entity.
+  # This reduces exported series, but the included world's entities are still walked.
+  allowlist: []
+
+# Exact, case-sensitive world names omitted from all per-world metrics and slow scans.
+# Server-wide players, event counters, and Folia player-location samples remain global.
+exclude-worlds: []

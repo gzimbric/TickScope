@@ -11,7 +11,8 @@
       },
       "panels": [],
       "title": "Now",
-      "type": "row"
+      "type": "row",
+      "id": 1
     },
     {
       "datasource": {
@@ -64,13 +65,14 @@
           },
           "expr": "mc_players_online{server=~\"$server\"}",
           "instant": true,
-          "legendFormat": "",
+          "legendFormat": "{{server}}",
           "range": false,
           "refId": "A"
         }
       ],
       "title": "Players online",
-      "type": "stat"
+      "type": "stat",
+      "id": 2
     },
     {
       "datasource": {
@@ -131,13 +133,14 @@
           },
           "expr": "mc_tps{server=~\"$server\",window=\"1m\"}",
           "instant": true,
-          "legendFormat": "",
+          "legendFormat": "{{server}}",
           "range": false,
           "refId": "A"
         }
       ],
       "title": "TPS (1m)",
-      "type": "stat"
+      "type": "stat",
+      "id": 3
     },
     {
       "datasource": {
@@ -198,13 +201,14 @@
           },
           "expr": "mc_mspt_ms{server=~\"$server\",quantile=\"p50\"}",
           "instant": true,
-          "legendFormat": "",
+          "legendFormat": "{{server}}",
           "range": false,
           "refId": "A"
         }
       ],
       "title": "MSPT p50",
-      "type": "stat"
+      "type": "stat",
+      "id": 4
     },
     {
       "datasource": {
@@ -265,13 +269,14 @@
           },
           "expr": "mc_mspt_ms{server=~\"$server\",quantile=\"p95\"}",
           "instant": true,
-          "legendFormat": "",
+          "legendFormat": "{{server}}",
           "range": false,
           "refId": "A"
         }
       ],
       "title": "MSPT p95",
-      "type": "stat"
+      "type": "stat",
+      "id": 5
     },
     {
       "datasource": {
@@ -332,13 +337,14 @@
           },
           "expr": "mc_mspt_ms{server=~\"$server\",quantile=\"p99\"}",
           "instant": true,
-          "legendFormat": "",
+          "legendFormat": "{{server}}",
           "range": false,
           "refId": "A"
         }
       ],
       "title": "MSPT p99",
-      "type": "stat"
+      "type": "stat",
+      "id": 6
     },
     {
       "datasource": {
@@ -391,13 +397,14 @@
           },
           "expr": "mc_jvm_memory_bytes_used{server=~\"$server\",area=\"heap\"}",
           "instant": true,
-          "legendFormat": "",
+          "legendFormat": "{{server}}",
           "range": false,
           "refId": "A"
         }
       ],
       "title": "Heap used",
-      "type": "stat"
+      "type": "stat",
+      "id": 7
     },
     {
       "collapsed": false,
@@ -409,7 +416,8 @@
       },
       "panels": [],
       "title": "Tick performance",
-      "type": "row"
+      "type": "row",
+      "id": 8
     },
     {
       "datasource": {
@@ -482,13 +490,14 @@
           },
           "expr": "mc_mspt_ms{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "{{quantile}}",
+          "legendFormat": "{{server}} \u00b7 {{quantile}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Tick time percentiles",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 9
     },
     {
       "datasource": {
@@ -541,13 +550,14 @@
           },
           "expr": "mc_tps{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "{{window}}",
+          "legendFormat": "{{server}} \u00b7 {{window}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "TPS",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 10
     },
     {
       "collapsed": false,
@@ -559,7 +569,8 @@
       },
       "panels": [],
       "title": "Folia regions",
-      "type": "row"
+      "type": "row",
+      "id": 11
     },
     {
       "datasource": {
@@ -611,7 +622,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "mc_folia_region_tps{server=~\"$server\",statistic=\"avg\"}",
-          "legendFormat": "{{window}} avg",
+          "legendFormat": "{{server}} \u00b7 {{window}} avg",
           "refId": "A"
         },
         {
@@ -620,12 +631,13 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "mc_folia_region_tps{server=~\"$server\",statistic=\"min\"}",
-          "legendFormat": "{{window}} worst region",
+          "legendFormat": "{{server}} \u00b7 {{window}} worst region",
           "refId": "B"
         }
       ],
       "title": "Regional TPS (Folia)",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 12
     },
     {
       "datasource": {
@@ -697,7 +709,7 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "mc_folia_region_mspt_ms{server=~\"$server\",statistic=\"avg\"}",
-          "legendFormat": "{{window}} avg",
+          "legendFormat": "{{server}} \u00b7 {{window}} avg",
           "refId": "A"
         },
         {
@@ -706,12 +718,13 @@
             "uid": "${DS_PROMETHEUS}"
           },
           "expr": "mc_folia_region_mspt_ms{server=~\"$server\",statistic=\"max\"}",
-          "legendFormat": "{{window}} worst region",
+          "legendFormat": "{{server}} \u00b7 {{window}} worst region",
           "refId": "B"
         }
       ],
       "title": "Regional tick time (Folia)",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 13
     },
     {
       "collapsed": false,
@@ -723,7 +736,8 @@
       },
       "panels": [],
       "title": "Memory and CPU",
-      "type": "row"
+      "type": "row",
+      "id": 14
     },
     {
       "datasource": {
@@ -776,7 +790,7 @@
           },
           "expr": "mc_jvm_memory_bytes_used{server=~\"$server\",area=\"heap\"}",
           "instant": false,
-          "legendFormat": "used",
+          "legendFormat": "{{server}} \u00b7 used",
           "range": true,
           "refId": "A"
         },
@@ -787,7 +801,7 @@
           },
           "expr": "mc_jvm_memory_bytes_committed{server=~\"$server\",area=\"heap\"}",
           "instant": false,
-          "legendFormat": "committed",
+          "legendFormat": "{{server}} \u00b7 committed",
           "range": true,
           "refId": "B"
         },
@@ -798,13 +812,14 @@
           },
           "expr": "mc_jvm_memory_bytes_max{server=~\"$server\",area=\"heap\"}",
           "instant": false,
-          "legendFormat": "max",
+          "legendFormat": "{{server}} \u00b7 max",
           "range": true,
           "refId": "C"
         }
       ],
       "title": "Heap",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 15
     },
     {
       "datasource": {
@@ -857,7 +872,7 @@
           },
           "expr": "mc_process_cpu_load_ratio{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "server process",
+          "legendFormat": "{{server}} \u00b7 server process",
           "range": true,
           "refId": "A"
         },
@@ -868,13 +883,14 @@
           },
           "expr": "mc_system_cpu_load_ratio{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "host or container",
+          "legendFormat": "{{server}} \u00b7 host or container",
           "range": true,
           "refId": "B"
         }
       ],
       "title": "CPU load",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 16
     },
     {
       "collapsed": false,
@@ -886,7 +902,8 @@
       },
       "panels": [],
       "title": "JVM",
-      "type": "row"
+      "type": "row",
+      "id": 17
     },
     {
       "datasource": {
@@ -939,13 +956,14 @@
           },
           "expr": "rate(mc_jvm_gc_seconds_total{server=~\"$server\"}[$__rate_interval])",
           "instant": false,
-          "legendFormat": "{{gc}}",
+          "legendFormat": "{{server}} \u00b7 {{gc}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "GC time rate by collector",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 18
     },
     {
       "datasource": {
@@ -998,7 +1016,7 @@
           },
           "expr": "mc_jvm_threads_current{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "current",
+          "legendFormat": "{{server}} \u00b7 current",
           "range": true,
           "refId": "A"
         },
@@ -1009,7 +1027,7 @@
           },
           "expr": "mc_jvm_threads_daemon{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "daemon",
+          "legendFormat": "{{server}} \u00b7 daemon",
           "range": true,
           "refId": "B"
         },
@@ -1020,13 +1038,14 @@
           },
           "expr": "mc_jvm_threads_peak{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "peak",
+          "legendFormat": "{{server}} \u00b7 peak",
           "range": true,
           "refId": "C"
         }
       ],
       "title": "Threads",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 19
     },
     {
       "collapsed": false,
@@ -1038,7 +1057,8 @@
       },
       "panels": [],
       "title": "Worlds",
-      "type": "row"
+      "type": "row",
+      "id": 20
     },
     {
       "datasource": {
@@ -1091,13 +1111,14 @@
           },
           "expr": "mc_world_entities{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "{{world}}",
+          "legendFormat": "{{server}} \u00b7 {{world}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Entities by world",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 21
     },
     {
       "datasource": {
@@ -1150,13 +1171,14 @@
           },
           "expr": "mc_world_chunks{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "{{world}}",
+          "legendFormat": "{{server}} \u00b7 {{world}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Loaded chunks by world",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 22
     },
     {
       "datasource": {
@@ -1209,13 +1231,14 @@
           },
           "expr": "mc_world_tile_entities{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "{{world}}",
+          "legendFormat": "{{server}} \u00b7 {{world}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Tile entities by world",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 23
     },
     {
       "datasource": {
@@ -1268,13 +1291,14 @@
           },
           "expr": "topk(10, mc_world_entities_by_type{server=~\"$server\"})",
           "instant": false,
-          "legendFormat": "{{type}} ({{world}})",
+          "legendFormat": "{{server}} \u00b7 {{type}} ({{world}})",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Top entity types",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 24
     },
     {
       "datasource": {
@@ -1327,13 +1351,14 @@
           },
           "expr": "mc_world_players{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "{{world}}",
+          "legendFormat": "{{server}} \u00b7 {{world}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Players by world",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 25
     },
     {
       "collapsed": false,
@@ -1345,7 +1370,8 @@
       },
       "panels": [],
       "title": "Players and events",
-      "type": "row"
+      "type": "row",
+      "id": 26
     },
     {
       "datasource": {
@@ -1398,13 +1424,14 @@
           },
           "expr": "mc_players_online{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "online",
+          "legendFormat": "{{server}} \u00b7 online",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Players online",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 27
     },
     {
       "datasource": {
@@ -1457,7 +1484,7 @@
           },
           "expr": "mc_player_ping_avg_ms{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "mean",
+          "legendFormat": "{{server}} \u00b7 mean",
           "range": true,
           "refId": "A"
         },
@@ -1468,13 +1495,14 @@
           },
           "expr": "mc_player_ping_max_ms{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "worst",
+          "legendFormat": "{{server}} \u00b7 worst",
           "range": true,
           "refId": "B"
         }
       ],
       "title": "Ping",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 28
     },
     {
       "datasource": {
@@ -1527,13 +1555,14 @@
           },
           "expr": "rate(mc_events_total{server=~\"$server\"}[$__rate_interval])",
           "instant": false,
-          "legendFormat": "{{event}}",
+          "legendFormat": "{{server}} \u00b7 {{event}}",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Event rate",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 29
     },
     {
       "collapsed": false,
@@ -1545,7 +1574,8 @@
       },
       "panels": [],
       "title": "Exporter",
-      "type": "row"
+      "type": "row",
+      "id": 30
     },
     {
       "datasource": {
@@ -1598,7 +1628,7 @@
           },
           "expr": "mc_collection_duration_seconds{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "main-thread collect",
+          "legendFormat": "{{server}} \u00b7 main-thread collect",
           "range": true,
           "refId": "A"
         },
@@ -1609,13 +1639,14 @@
           },
           "expr": "mc_entity_collection_duration_seconds{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "entity-type scan",
+          "legendFormat": "{{server}} \u00b7 entity-type scan",
           "range": true,
           "refId": "B"
         }
       ],
       "title": "Collection cost",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 31
     },
     {
       "datasource": {
@@ -1668,13 +1699,194 @@
           },
           "expr": "mc_plugins{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "plugins",
+          "legendFormat": "{{server}} \u00b7 plugins",
           "range": true,
           "refId": "A"
         }
       ],
       "title": "Plugins loaded",
-      "type": "timeseries"
+      "type": "timeseries",
+      "id": 32
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Time spent collecting TickScope snapshots. Main and entity scans run on separate cadences.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(time() - mc_collection_last_success_timestamp_seconds{server=~\"$server\"}) and (mc_collection_enabled{server=~\"$server\"} == 1)",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 {{stage}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Collection age",
+      "type": "timeseries",
+      "id": 33
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Time spent collecting TickScope snapshots. Main and entity scans run on separate cadences.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "increase(mc_collection_failures_total{server=~\"$server\"}[$__rate_interval])",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 {{stage}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Collection failures",
+      "type": "timeseries",
+      "id": 34
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Successful player pings / requested players in the last completed or expired batch. Zero requested players displays 0; regional API availability is reported separately by regional sample counts.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 81
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mc_folia_player_samples_completed{server=~\"$server\"} / clamp_min(mc_folia_player_samples_expected{server=~\"$server\"}, 1)",
+          "instant": false,
+          "legendFormat": "{{server}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Folia player sample coverage",
+      "type": "timeseries",
+      "id": 35
     }
   ],
   "refresh": "30s",

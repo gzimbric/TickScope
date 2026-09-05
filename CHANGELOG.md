@@ -4,6 +4,18 @@ Release notes are written here by hand. The release workflow reads the section m
 version being tagged and uses it verbatim for the GitHub release and the Modrinth changelog,
 so this file is the one place a user-facing change gets described.
 
+## Unreleased
+
+- Reject malformed YAML and out-of-range ports before applying configuration changes.
+- Close active and queued HTTP connections on reload or shutdown.
+- Publish Folia sample generations atomically; expired batches publish partial coverage,
+  and stalled players cannot accumulate additional sampling tasks.
+- Remove disabled or excluded cached world metrics immediately on reload.
+- Add collection freshness, failure counters, Folia coverage metrics, and status output.
+- Add exact world exclusions and an optional entity-type allowlist.
+- Add Prometheus alert rules, server names in dashboard legends, collection-health panels,
+  and an optional dashboard with repeated server overview rows.
+
 ## 1.4.0
 
 - **The metrics endpoint can no longer be silenced by a stalled client.** A connection that sent

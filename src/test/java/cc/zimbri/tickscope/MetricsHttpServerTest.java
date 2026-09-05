@@ -182,6 +182,55 @@ class MetricsHttpServerTest {
         server = null;
     }
 
+
+    @Test
+    void shutdownClosesActiveAndQueuedSockets() throws Exception {
+        List<Socket> clients = new ArrayList<>();
+        try {
+            for (int i = 0; i < 5; i++) clients.add(new Socket("127.0.0.1", server.port()));
+            var field = MetricsHttpServer.class.getDeclaredField("workers");
+            field.setAccessible(true);
+            var workers = (java.util.concurrent.ThreadPoolExecutor) field.get(server);
+            long deadline = System.nanoTime() + 2_000_000_000L;
+            while (workers.getQueue().size() != 1 && System.nanoTime() < deadline) Thread.sleep(5);
+            assertEquals(1, workers.getQueue().size());
+            Object queued = workers.getQueue().peek();
+            server.close();
+            for (Socket client : clients) {
+                client.setSoTimeout(1000);
+                try { assertEquals(-1, client.getInputStream().read()); }
+                catch (java.net.SocketException closed) { /* A reset is also a closed connection. */ }
+            }
+            java.lang.ref.Reference.reachabilityFence(queued);
+            assertTrue(workers.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS));
+        } finally { for (Socket client : clients) client.close(); }
+    }
+
+
+    @Test
+    void shutdownUnblocksAWriterWhoseClientNeverReads() throws Exception {
+        server.close();
+        var rendering = new java.util.concurrent.CountDownLatch(1);
+        server = new MetricsHttpServer("127.0.0.1", 0, "/metrics", "", () -> {
+            rendering.countDown();
+            return new byte[16 * 1024 * 1024];
+        });
+        server.start();
+        try (Socket client = new Socket()) {
+            client.setReceiveBufferSize(1024);
+            client.connect(new java.net.InetSocketAddress("127.0.0.1", server.port()));
+            client.getOutputStream().write("GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n"
+                    .getBytes(StandardCharsets.US_ASCII));
+            assertTrue(rendering.await(2, java.util.concurrent.TimeUnit.SECONDS));
+            var field = MetricsHttpServer.class.getDeclaredField("workers");
+            field.setAccessible(true);
+            var workers = (java.util.concurrent.ThreadPoolExecutor) field.get(server);
+            server.close();
+            assertTrue(workers.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS),
+                    "Closing must release writers without waiting for the client or watchdog");
+        }
+    }
+
     private Response request(String requestLine, String authorization) throws IOException {
         try (Socket socket = new Socket("127.0.0.1", server.port())) {
             socket.setSoTimeout(10_000);

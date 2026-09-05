@@ -106,6 +106,44 @@ class FoliaPlayerSamplerTest {
         assertTrue(sample.regionMspt().isEmpty());
     }
 
+
+    @Test
+    void expiresPartialBatchesAndBoundsQueuedWorkPerPlayer() {
+        ControlledScheduler scheduler = new ControlledScheduler();
+        var sampler = new FoliaPlayerSampler(scheduler);
+        Player responsive = player(12), lagging = player(40);
+        var first = new AtomicReference<MetricsCollector.PlayerSample>();
+        var second = new AtomicReference<MetricsCollector.PlayerSample>();
+        sampler.sample(List.of(responsive, lagging), first::set);
+        scheduler.pending.get(0).task.run();
+        sampler.sample(List.of(responsive, lagging), second::set);
+        assertEquals(1, first.get().pingSamples());
+        assertEquals(2, first.get().online());
+        assertEquals(3, scheduler.pending.size(), "Lagging player's second task must not be queued");
+        scheduler.pending.get(2).task.run();
+        assertEquals(1, second.get().pingSamples());
+        scheduler.pending.get(1).task.run(); // Expired callback releases its ticket only.
+        assertEquals(1, first.get().pingSamples());
+        sampler.sample(List.of(responsive, lagging), ignored -> {});
+        assertEquals(5, scheduler.pending.size(), "Player can be scheduled again after recovery");
+        sampler.close();
+        sampler.sample(List.of(responsive, lagging), ignored -> { throw new AssertionError(); });
+        assertEquals(5, scheduler.pending.size());
+    }
+
+    @Test
+    void manyCyclesDoNotQueueMoreWorkBehindAStalledPlayer() {
+        ControlledScheduler scheduler = new ControlledScheduler();
+        var sampler = new FoliaPlayerSampler(scheduler);
+        Player lagging = player(40);
+        var results = new ArrayList<MetricsCollector.PlayerSample>();
+        for (int i = 0; i < 100; i++) sampler.sample(List.of(lagging), results::add);
+        assertEquals(1, scheduler.pending.size());
+        assertEquals(100, results.size());
+        assertEquals(0, results.get(99).pingSamples());
+        sampler.close();
+    }
+
     private static Player player(int ping) {
         return (Player) Proxy.newProxyInstance(
                 Player.class.getClassLoader(),

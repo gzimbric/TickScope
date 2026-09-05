@@ -28,6 +28,8 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -87,6 +89,7 @@ final class MetricsHttpServer implements AutoCloseable {
     private final String token;
     private final Supplier<byte[]> body;
     private volatile boolean running = true;
+    private final Set<Socket> connections = new HashSet<>();
 
     MetricsHttpServer(String bindAddress, int port, String path, String token,
                       Supplier<byte[]> body) throws IOException {
@@ -124,8 +127,12 @@ final class MetricsHttpServer implements AutoCloseable {
 
     @Override
     public void close() {
-        running = false;
-        closeQuietly(listener);   // unblocks accept()
+        synchronized (connections) {
+            running = false;
+            closeQuietly(listener);   // unblocks accept()
+            for (Socket connection : connections) closeQuietly(connection);
+            connections.clear();
+        }
         workers.shutdownNow();
         deadlines.shutdownNow();
     }
@@ -166,6 +173,13 @@ final class MetricsHttpServer implements AutoCloseable {
                 sleepQuietly();
                 continue;
             }
+            synchronized (connections) {
+                if (!running) {
+                    closeQuietly(connection);
+                    return;
+                }
+                connections.add(connection);
+            }
             try {
                 connection.setSoTimeout(READ_TIMEOUT_MS);
                 connection.setTcpNoDelay(true);
@@ -174,15 +188,23 @@ final class MetricsHttpServer implements AutoCloseable {
                 // RejectedExecutionException lands here too: the pool is saturated.
                 // Saturated or unusable. Dropping the connection keeps the bound on how much
                 // work one client can force the server to hold open.
-                closeQuietly(connection);
+                release(connection);
             }
         }
     }
 
+    private void release(Socket connection) {
+        closeQuietly(connection);
+        synchronized (connections) {
+            connections.remove(connection);
+        }
+    }
+
     private void serve(Socket connection) {
-        ScheduledFuture<?> deadline = deadlines.schedule(
-                () -> closeQuietly(connection), EXCHANGE_DEADLINE_MS, TimeUnit.MILLISECONDS);
+        ScheduledFuture<?> deadline = null;
         try {
+            deadline = deadlines.schedule(
+                    () -> closeQuietly(connection), EXCHANGE_DEADLINE_MS, TimeUnit.MILLISECONDS);
             InputStream in = new BufferedInputStream(connection.getInputStream(), 4096);
             String requestLine = readLine(in);
             if (requestLine == null) return;
@@ -210,8 +232,8 @@ final class MetricsHttpServer implements AutoCloseable {
         } catch (IOException | RuntimeException e) {
             // Timed out, disconnected, or malformed. There is no one left to tell.
         } finally {
-            deadline.cancel(false);
-            closeQuietly(connection);
+            if (deadline != null) deadline.cancel(false);
+            release(connection);
         }
     }
 

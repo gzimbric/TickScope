@@ -22,10 +22,17 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
+import java.io.File;
+import org.bukkit.configuration.InvalidConfigurationException;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
+import java.util.logging.Logger;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Set;
+import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -51,14 +58,15 @@ public final class TickScope extends JavaPlugin {
     private FoliaPlayerSampler foliaPlayers;
     private EventCounters events;
     private final AtomicLong foliaPlayerSampleGeneration = new AtomicLong();
-    private final AtomicLong foliaPlayerSampleApplied = new AtomicLong();
     private final ReentrantLock runtimeLock = new ReentrantLock();
     private volatile MetricsCollector collector;
     private volatile Snapshot latest;
     private volatile Settings active;
+    private boolean stopped;
 
-    private record Settings(String serverId, String bind, int port, String path, String token,
-                            long interval, boolean perWorld, boolean byType, long scanInterval) {
+    record Settings(String serverId, String bind, int port, String path, String token,
+                            long interval, boolean perWorld, boolean byType, long scanInterval,
+                            Set<String> excludedWorlds, Set<String> allowedTypes) {
         boolean sameEndpoint(Settings other) {
             return other != null && bind.equals(other.bind) && port == other.port
                     && path.equals(other.path) && token.equals(other.token);
@@ -81,7 +89,7 @@ public final class TickScope extends JavaPlugin {
             startHttp(settings);
             active = settings;
             logServing(settings);
-        } catch (IllegalArgumentException | IOException e) {
+        } catch (IllegalArgumentException | IOException | InvalidConfigurationException e) {
             getLogger().severe("Could not start TickScope — " + e.getMessage());
             getServer().getPluginManager().disablePlugin(this);
         } finally {
@@ -93,10 +101,12 @@ public final class TickScope extends JavaPlugin {
     public void onDisable() {
         runtimeLock.lock();
         try {
+            stopped = true;
             if (sampler != null) sampler.cancel();
             if (scanSampler != null) scanSampler.cancel();
             sampler = null;
             scanSampler = null;
+            if (foliaPlayers != null) foliaPlayers.close();
             stopHttp();
         } finally {
             runtimeLock.unlock();
@@ -113,7 +123,6 @@ public final class TickScope extends JavaPlugin {
                 ReloadResult result;
                 runtimeLock.lock();
                 try {
-                    reloadConfig();
                     result = reloadRuntime();
                 } finally {
                     runtimeLock.unlock();
@@ -146,6 +155,17 @@ public final class TickScope extends JavaPlugin {
         sender.sendMessage("  collection-interval: " + settings.interval + " ticks");
         sender.sendMessage("  world-scan-interval: "
                 + (scheduler.isFolia() ? "disabled on Folia" : settings.scanInterval + " ticks"));
+        for (var entry : collector.health().snapshot().entrySet()) {
+            var health = entry.getValue();
+            if (!health.enabled()) continue;
+            String age = health.lastSuccess() == 0 ? "not yet collected"
+                    : String.format(Locale.ROOT, "%.1f s ago",
+                            Math.max(0, System.currentTimeMillis() / 1000d - health.lastSuccess()));
+            sender.sendMessage("  " + entry.getKey() + " collection: " + age
+                    + ", failures " + health.failures());
+        }
+        sender.sendMessage("  world exclusions: " + settings.excludedWorlds.size()
+                + ", entity allowlist: " + settings.allowedTypes.size());
         // State only -- never the token itself.
         sender.sendMessage("  auth: " + (settings.token.isEmpty() ? "none" : "required"));
         if (scheduler.isFolia()) {
@@ -172,33 +192,68 @@ public final class TickScope extends JavaPlugin {
         return "http://" + host + ":" + settings.port + settings.path;
     }
 
-    private Settings readSettings() {
-        String serverId = required("server-id", "paper");
-        String bind = required("bind-address", "127.0.0.1");
-        int port = (int) integral("port", 9101L);
-        if (port < 1 || port > 65535) {
-            throw new IllegalArgumentException("port must be between 1 and 65535, but is " + port);
-        }
-        String path = required("path", "/metrics");
+    private Settings readSettings() throws IOException, InvalidConfigurationException {
+        return readSettings(new File(getDataFolder(), "config.yml"), getLogger());
+    }
+
+    static Settings readSettings(File file, Logger logger)
+            throws IOException, InvalidConfigurationException {
+        // Unlike loadConfiguration/reloadConfig, load propagates malformed YAML and I/O errors.
+        YamlConfiguration candidate = new YamlConfiguration();
+        candidate.load(file);
+        return parseSettings(candidate, logger);
+    }
+
+    static Settings parseSettings(FileConfiguration config, Logger logger) {
+        String serverId = required(config, "server-id", "paper");
+        String bind = required(config, "bind-address", "127.0.0.1");
+        long configuredPort = integral(config, "port", 9101L);
+        int port = checkedPort(configuredPort);
+        String path = required(config, "path", "/metrics");
         if (!path.startsWith("/") || path.length() > 1 && path.endsWith("/")
                 || path.indexOf('?') >= 0 || path.indexOf('#') >= 0) {
             throw new IllegalArgumentException(
                     "path must be an absolute path without a trailing '/', query, or fragment");
         }
-        String token = Objects.requireNonNullElse(
-                getConfig().getString("auth-token"), "").trim();
-        long interval = atLeast("collection-interval-ticks",
-                integral("collection-interval-ticks", 100L), 20L);
-        boolean perWorld = bool("per-world", true);
-        boolean byType = bool("entity-types.enabled", true);
-        long scanInterval = atLeast("entity-types.interval-ticks",
-                integral("entity-types.interval-ticks", 600L), 100L);
+        String token = string(config, "auth-token", "");
+        long interval = atLeast(logger, "collection-interval-ticks",
+                integral(config, "collection-interval-ticks", 100L), 20L);
+        boolean perWorld = bool(config, "per-world", true);
+        boolean byType = bool(config, "entity-types.enabled", true);
+        long scanInterval = atLeast(logger, "entity-types.interval-ticks",
+                integral(config, "entity-types.interval-ticks", 600L), 100L);
         return new Settings(serverId, bind, port, path, token, interval,
-                perWorld, byType, scanInterval);
+                perWorld, byType, scanInterval, stringSet(config, "exclude-worlds"),
+                stringSet(config, "entity-types.allowlist"));
     }
 
-    private String required(String key, String fallback) {
-        String value = Objects.requireNonNullElse(getConfig().getString(key), fallback).trim();
+    private static Set<String> stringSet(FileConfiguration config, String key) {
+        Object value = config.get(key);
+        if (value == null) return Set.of();
+        if (!(value instanceof List<?> list)) {
+            throw new IllegalArgumentException(key + " must be a list of strings");
+        }
+        Set<String> result = new LinkedHashSet<>();
+        for (Object item : list) {
+            if (!(item instanceof String text) || text.isBlank()) {
+                throw new IllegalArgumentException(key + " must contain non-empty strings");
+            }
+            result.add(text.trim());
+        }
+        return Set.copyOf(result);
+    }
+
+    private static String string(FileConfiguration config, String key, String fallback) {
+        Object value = config.get(key);
+        if (value == null) return fallback;
+        if (!(value instanceof String text)) {
+            throw new IllegalArgumentException(key + " must be a string");
+        }
+        return text.trim();
+    }
+
+    private static String required(FileConfiguration config, String key, String fallback) {
+        String value = string(config, key, fallback);
         if (value.isEmpty()) throw new IllegalArgumentException(key + " must not be empty");
         return value;
     }
@@ -209,8 +264,8 @@ public final class TickScope extends JavaPlugin {
      * {@code per-world: "false"} silently stayed enabled. The configuration on disk has to mean
      * what it says, so a wrong type is reported rather than replaced.
      */
-    private long integral(String key, long fallback) {
-        Object value = getConfig().get(key);
+    private static long integral(FileConfiguration config, String key, long fallback) {
+        Object value = config.get(key);
         if (value == null) return fallback;
         if (!(value instanceof Integer) && !(value instanceof Long)) {
             throw new IllegalArgumentException(
@@ -219,8 +274,8 @@ public final class TickScope extends JavaPlugin {
         return ((Number) value).longValue();
     }
 
-    private boolean bool(String key, boolean fallback) {
-        Object value = getConfig().get(key);
+    private static boolean bool(FileConfiguration config, String key, boolean fallback) {
+        Object value = config.get(key);
         if (value == null) return fallback;
         if (!(value instanceof Boolean)) {
             throw new IllegalArgumentException(
@@ -230,11 +285,18 @@ public final class TickScope extends JavaPlugin {
     }
 
     /** Too-fast intervals are raised rather than refused, but never in silence. */
-    private long atLeast(String key, long value, long minimum) {
+    private static long atLeast(Logger logger, String key, long value, long minimum) {
         if (value >= minimum) return value;
-        getLogger().warning(key + " is " + value + ", which is below the supported minimum of "
+        logger.warning(key + " is " + value + ", which is below the supported minimum of "
                 + minimum + "; using " + minimum);
         return minimum;
+    }
+
+    private static int checkedPort(long port) {
+        if (port < 1 || port > 65535) {
+            throw new IllegalArgumentException("port must be between 1 and 65535, but is " + port);
+        }
+        return (int) port;
     }
 
     private static String quoted(Object value) {
@@ -242,9 +304,6 @@ public final class TickScope extends JavaPlugin {
     }
 
     private void configureCollector(Settings settings) {
-        // Invalidate entity-scheduler callbacks that may still be completing from the previous
-        // configuration. A Folia task already handed to a player cannot be synchronously canceled.
-        foliaPlayerSampleGeneration.incrementAndGet();
         if (sampler != null) sampler.cancel();
         if (scanSampler != null) scanSampler.cancel();
         sampler = null;
@@ -259,14 +318,15 @@ public final class TickScope extends JavaPlugin {
         collector = new MetricsCollector(settings.serverId, settings.perWorld, settings.byType,
                 events, pluginVersion, paperVersion, javaVersion,
                 scheduler.isFolia() ? "folia" : "paper",
-                previous == null ? null : previous.heavyWorldData());
+                previous == null ? null : previous.heavyWorldData(),
+                settings.excludedWorlds, settings.allowedTypes);
 
         if (scheduler.isFolia()) {
             // onEnable and player commands do not necessarily own world data on Folia. Publish a
             // placeholder and let the first global-region task replace it on the next tick.
             latest = collector.initialSnapshot();
-            foliaPlayers = new FoliaPlayerSampler(scheduler);
-            sampler = scheduler.repeatGlobal(this::collectFolia, 1L, settings.interval);
+            if (foliaPlayers == null) foliaPlayers = new FoliaPlayerSampler(scheduler);
+            sampler = scheduler.repeatGlobal(() -> guarded(this::collectFolia), 1L, settings.interval);
             // The world scan reads chunk and entity data the global region does not own, so it
             // has no safe home on Folia at all.
             getLogger().info("Per-world entity, tile-entity and entity-type metrics are "
@@ -276,53 +336,44 @@ public final class TickScope extends JavaPlugin {
             // Paper configuration is applied on the main thread, so publish a real sample now.
             latest = collector.collectPaper();
             sampler = scheduler.repeatGlobal(
-                    () -> latest = collector.collectPaper(), settings.interval, settings.interval);
+                    () -> guarded(() -> latest = collector.collectPaper()), settings.interval, settings.interval);
             if (settings.perWorld || settings.byType) {
                 scanSampler = scheduler.repeatGlobal(
-                        collector::collectHeavyWorldData, 40L, settings.scanInterval);
+                        () -> guarded(collector::collectHeavyWorldData), 40L, settings.scanInterval);
             }
         }
     }
 
-    private void collectFolia() {
-        // Taken here on the global region. The per-player sample that supplies ping and regional
-        // figures only completes after this snapshot is published, so reading the player count
-        // from it reported the previous cycle's number and disagreed with the per-world counts.
-        int online = getServer().getOnlinePlayers().size();
-        latest = collector.collectFolia(online);
-        long generation = foliaPlayerSampleGeneration.incrementAndGet();
-        MetricsCollector samplingCollector = collector;
-        foliaPlayers.sample(getServer().getOnlinePlayers(), players -> {
-            // A batch only completes once every player's region has run its task. Discarding a
-            // batch the moment a newer one started meant that with several regions lagging at
-            // staggered times, no batch ever survived and ping and regional figures stayed
-            // frozen at the last success indefinitely. A late batch is still real data, so it
-            // is accepted unless a newer one has already been applied.
-            if (claimNewerSample(foliaPlayerSampleApplied, generation)) {
-                samplingCollector.updateFoliaPlayers(players);
-            }
-        });
+    private void guarded(Runnable collection) {
+        try {
+            collection.run();
+        } catch (RuntimeException e) {
+            getLogger().warning("Collection failed; retaining the last sample: " + e.getMessage());
+        }
     }
 
-    /**
-     * Advances the applied-sample watermark to {@code generation}, reporting whether this batch
-     * won. Ordering, not recency, is what matters: an older batch must never overwrite a newer
-     * one, but a late batch is better than none.
-     */
-    static boolean claimNewerSample(AtomicLong applied, long generation) {
-        long current;
-        do {
-            current = applied.get();
-            if (current >= generation) return false;
-        } while (!applied.compareAndSet(current, generation));
-        return true;
+    private void collectFolia() {
+        // Capture one configuration under the same lock used by reload. Already-running
+        // entity callbacks retain their old collector and cannot update its replacement.
+        runtimeLock.lock();
+        try {
+            if (stopped) return;
+            var online = List.copyOf(getServer().getOnlinePlayers());
+            MetricsCollector samplingCollector = collector;
+            long generation = foliaPlayerSampleGeneration.incrementAndGet();
+            foliaPlayers.sample(online,
+                    players -> samplingCollector.updateFoliaPlayers(generation, players));
+            latest = samplingCollector.collectFolia(online.size());
+        } finally {
+            runtimeLock.unlock();
+        }
     }
 
     private ReloadResult reloadRuntime() {
         final Settings next;
         try {
             next = readSettings();
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IOException | InvalidConfigurationException e) {
             getLogger().warning("Reload rejected — " + e.getMessage());
             return ReloadResult.REJECTED;
         }
@@ -355,7 +406,7 @@ public final class TickScope extends JavaPlugin {
     private void startHttp(Settings settings) throws IOException {
         MetricsHttpServer candidate = new MetricsHttpServer(settings.bind, settings.port,
                 settings.path, settings.token,
-                () -> PrometheusWriter.render(latest).getBytes(StandardCharsets.UTF_8));
+                () -> PrometheusWriter.render(latest, collector.health()).getBytes(StandardCharsets.UTF_8));
         try {
             candidate.start();
         } catch (RuntimeException e) {

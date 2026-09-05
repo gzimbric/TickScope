@@ -121,6 +121,9 @@ body=$(perl -0pe '
   s#src="assets/icon\.png"#src="https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/icon.png"#g;
   s#src="assets/grafana/dashboard-preview\.png"#src="https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/dashboard-preview.png"#g;
   s#\]\(assets/grafana/tickscope-dashboard\.json\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/tickscope-dashboard.json)#g;
+  s#\]\(docs/monitoring\.md\)#](https://github.com/gzimbric/TickScope/blob/main/docs/monitoring.md)#g;
+  s#\]\(assets/prometheus/tickscope-alerts\.yml\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/prometheus/tickscope-alerts.yml)#g;
+  s#\]\(assets/grafana/tickscope-per-server-dashboard\.json\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/tickscope-per-server-dashboard.json)#g;
   s#\]\(LICENSE\)#](https://github.com/gzimbric/TickScope/blob/main/LICENSE)#g;
   s{^\[!\[[^\n]*\n}{}mg;
   s{(^\# [^\n]*\n)\n+}{$1\n}m;

@@ -18,6 +18,7 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -31,6 +32,9 @@ final class FoliaPlayerSampler {
     private final PlatformScheduler scheduler;
     private final Method getRegionTps;
     private final Method getRegionMspt;
+    private final ConcurrentHashMap<Player, Object> inFlight = new ConcurrentHashMap<>();
+    private Accumulator active;
+    private boolean closed;
 
     FoliaPlayerSampler(PlatformScheduler scheduler) {
         this.scheduler = scheduler;
@@ -38,8 +42,12 @@ final class FoliaPlayerSampler {
         this.getRegionMspt = findRegionMethod("getRegionAverageTickTimes");
     }
 
-    void sample(Collection<? extends Player> currentPlayers,
+    synchronized void sample(Collection<? extends Player> currentPlayers,
                 Consumer<MetricsCollector.PlayerSample> completed) {
+        if (closed) return;
+        // One collection interval is the batch deadline. Publish the available readings
+        // before starting another batch, while keeping at most one queued task per player.
+        if (active != null) active.expire();
         List<? extends Player> players = new ArrayList<>(currentPlayers);
         if (players.isEmpty()) {
             completed.accept(MetricsCollector.PlayerSample.EMPTY);
@@ -47,18 +55,42 @@ final class FoliaPlayerSampler {
         }
 
         Accumulator accumulator = new Accumulator(players.size(), completed);
+        active = accumulator;
         for (Player player : players) {
             AtomicBoolean finished = new AtomicBoolean();
-            Runnable retired = () -> accumulator.retired(finished);
+            Object ticket = new Object();
+            if (inFlight.putIfAbsent(player, ticket) != null) {
+                accumulator.retired(finished);
+                continue;
+            }
+            Runnable retired = () -> {
+                inFlight.remove(player, ticket);
+                accumulator.retired(finished);
+            };
             try {
                 boolean accepted = scheduler.executeFor(player,
-                        () -> accumulator.record(player, readRegionMetrics(player), finished),
+                        () -> {
+                            try {
+                                if (!accumulator.isComplete()) {
+                                    accumulator.record(player, readRegionMetrics(player), finished);
+                                }
+                            } finally {
+                                retired.run();
+                            }
+                        },
                         retired);
                 if (!accepted) retired.run();
             } catch (RuntimeException e) {
                 retired.run();
             }
         }
+    }
+
+    synchronized void close() {
+        closed = true;
+        if (active != null) active.expire();
+        active = null;
+        inFlight.clear();
     }
 
     private RegionMetrics readRegionMetrics(Player player) {
@@ -88,6 +120,7 @@ final class FoliaPlayerSampler {
 
     private static final class Accumulator {
         private final int players;
+        private boolean complete;
         private final AtomicInteger remaining;
         private final AtomicInteger nextSlot = new AtomicInteger();
         private final AtomicInteger pingSamples = new AtomicInteger();
@@ -109,8 +142,8 @@ final class FoliaPlayerSampler {
             this.completed = completed;
         }
 
-        private void record(Player player, RegionMetrics metrics, AtomicBoolean finished) {
-            if (!finished.compareAndSet(false, true)) return;
+        private synchronized void record(Player player, RegionMetrics metrics, AtomicBoolean finished) {
+            if (complete || !finished.compareAndSet(false, true)) return;
             try {
                 int slot = nextSlot.getAndIncrement();
                 int ping = Math.max(0, player.getPing());
@@ -134,12 +167,19 @@ final class FoliaPlayerSampler {
             }
         }
 
-        private void retired(AtomicBoolean finished) {
-            if (finished.compareAndSet(false, true)) finishOne();
+        private synchronized void retired(AtomicBoolean finished) {
+            if (!complete && finished.compareAndSet(false, true)) finishOne();
         }
 
         private void finishOne() {
-            if (remaining.decrementAndGet() != 0) return;
+            if (remaining.decrementAndGet() == 0) expire();
+        }
+
+        private synchronized boolean isComplete() { return complete; }
+
+        private synchronized void expire() {
+            if (complete) return;
+            complete = true;
             List<Snapshot.RegionTps> regions = new ArrayList<>();
             List<Snapshot.RegionMspt> msptRegions = new ArrayList<>();
             for (int window = 0; window < WINDOWS.length; window++) {

@@ -11,7 +11,6 @@ package cc.zimbri.tickscope;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -44,15 +43,39 @@ class TickScopeTest {
 
     @Test
     void acceptsLateSamplesButNeverOutOfOrderOnes() {
-        AtomicLong applied = new AtomicLong();
-
-        assertTrue(TickScope.claimNewerSample(applied, 5L));
-        // Batch 4 finished after batch 5: older data must not overwrite newer.
-        assertFalse(TickScope.claimNewerSample(applied, 4L));
-        // Batch 7 is late -- several cycles have started since -- but it is still the newest
-        // data anyone has, so it wins rather than being discarded for being overdue.
-        assertTrue(TickScope.claimNewerSample(applied, 7L));
-        assertFalse(TickScope.claimNewerSample(applied, 7L));
-        assertEquals(7L, applied.get());
+        MetricsCollector collector = new MetricsCollector("test", false, false,
+                new EventCounters(), "test", "test", "17", "folia", null);
+        var sample = new MetricsCollector.PlayerSample(1, 12, 12, 1,
+                java.util.List.of(), java.util.List.of());
+        assertTrue(collector.updateFoliaPlayers(5, sample));
+        assertFalse(collector.updateFoliaPlayers(4, MetricsCollector.PlayerSample.EMPTY));
+        assertTrue(collector.updateFoliaPlayers(7, sample));
+        assertFalse(collector.updateFoliaPlayers(7, MetricsCollector.PlayerSample.EMPTY));
+        assertEquals(sample, collector.foliaPlayerSample());
     }
+    @Test
+    void concurrentFoliaUpdatesKeepTheNewestSampleAndCoverage() throws Exception {
+        var collector = new MetricsCollector("test", false, false, new EventCounters(),
+                "test", "test", "17", "folia", null);
+        var pool = java.util.concurrent.Executors.newFixedThreadPool(8);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        var futures = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+        try {
+            for (int i = 1; i <= 1000; i++) {
+                final int generation = i;
+                futures.add(pool.submit(() -> {
+                    start.await();
+                    collector.updateFoliaPlayers(generation, new MetricsCollector.PlayerSample(
+                            generation, generation, generation, generation, java.util.List.of(), java.util.List.of()));
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (var future : futures) future.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            assertEquals(1000, collector.foliaPlayerSample().pingMaxMs());
+            assertEquals(1000, collector.health().snapshot().get("players").completed());
+            assertFalse(collector.updateFoliaPlayers(999, MetricsCollector.PlayerSample.EMPTY));
+        } finally { pool.shutdownNow(); }
+    }
+
 }
