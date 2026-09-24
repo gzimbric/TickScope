@@ -2,18 +2,15 @@
 
 # TickScope — Minecraft monitoring for Prometheus and Grafana
 
-[![build](https://github.com/gzimbric/TickScope/actions/workflows/build.yml/badge.svg?branch=nextgen)](https://github.com/gzimbric/TickScope/actions/workflows/build.yml?query=branch%3Anextgen)
+[![latest release](https://img.shields.io/github/v/release/gzimbric/TickScope?label=download&color=brightgreen)](https://github.com/gzimbric/TickScope/releases/latest)
+[![build](https://github.com/gzimbric/TickScope/actions/workflows/build.yml/badge.svg)](https://github.com/gzimbric/TickScope/actions/workflows/build.yml)
 [![licence GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue.svg)](LICENSE)
 [![Paper 1.18.2+](https://img.shields.io/badge/Paper-1.18.2%2B-orange.svg)](https://papermc.io)
 [![Folia](https://img.shields.io/badge/Folia-supported-8a5cf5.svg)](https://papermc.io/software/folia)
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-red.svg)](https://adoptium.net)
 
-> **This is the 2.0 development branch.** It documents the Prometheus-native metric schema —
-> base-unit seconds, a `statistic` label, canonical `_bytes` suffixes — which **no released jar
-> implements yet**. Every published release is 1.x and uses the previous names, so do not pair
-> this page with a downloaded release. Build from this branch, or take the jar from a
-> [nextgen CI run](https://github.com/gzimbric/TickScope/actions/workflows/build.yml?query=branch%3Anextgen).
-> For the released schema, read the [main branch README](https://github.com/gzimbric/TickScope/blob/main/README.md).
+**Upgrading from 1.x:** 2.0 changes several metric names and expresses tick duration and ping
+in seconds. Update dashboards and alerts with the [migration guide](docs/metric-migration.md).
 
 TickScope is a lightweight Prometheus exporter for Minecraft Paper and Folia servers. The
 dependency-free plugin exposes tick health, players, per-world counters, JVM and CPU statistics,
@@ -40,9 +37,7 @@ mc_world_entities_by_type{world="world",type="chicken"} 35
 
 ## Quick start
 
-1. Build this branch with `mvn -B clean package`, or download the jar from a
-   [nextgen CI run](https://github.com/gzimbric/TickScope/actions/workflows/build.yml?query=branch%3Anextgen).
-   Released downloads are 1.x and do **not** use the metric names on this page.
+1. [Download the latest release](https://github.com/gzimbric/TickScope/releases/latest).
 2. Put `TickScope-*.jar` in the server's `plugins/` directory and restart.
 3. Scrape the default endpoint at `http://127.0.0.1:9101/metrics`.
 
@@ -78,9 +73,8 @@ See [health metrics, filters, and setup instructions](docs/monitoring.md), the
 
 ## Documentation
 
-The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickScope/wiki). Its
-pages describe the released 1.x schema; the 2.0 names on this page are documented on the wiki's
-`nextgen` branch until 2.0 ships.
+The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickScope/wiki).
+See the [2.0 metric migration guide](docs/metric-migration.md) for changed names and units.
 
 | Guide | Covers |
 |---|---|
@@ -110,13 +104,15 @@ and player counts, and all other server, player, event, JVM, and process metrics
 available.
 
 On Paper those three series come from a slower scan (`entity-types.interval-ticks`, 600 ticks by
-default) rather than from every collection, because counting tile entities walks the loaded chunks
-and, before Minecraft 26, counting entities walked every entity.
+default). It inspects at most `entity-types.chunks-per-tick` loaded chunks on each tick, 32 by
+default. A scan may therefore span multiple ticks; its totals are an approximate view of the
+world over that interval.
 
 ## Download and support
 
 - [Download on GitHub](https://github.com/gzimbric/TickScope/releases/latest)
 - [Download on Modrinth](https://modrinth.com/plugin/tickscope)
+- [Download on Hangar](https://hangar.papermc.io/gzimbric/TickScope)
 - [Report a bug](https://github.com/gzimbric/TickScope/issues/new?template=bug_report.yml)
 - [Request a feature](https://github.com/gzimbric/TickScope/issues/new?template=feature_request.yml)
 - [Ask a question](https://github.com/gzimbric/TickScope/discussions)

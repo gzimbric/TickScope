@@ -37,15 +37,15 @@
           "values": "17+0x20"
         },
         {
-          "series": "mc_folia_region_mspt_ms{server=\"test\",window=\"1m\",statistic=\"max\"}",
-          "values": "60+0x20"
+          "series": "mc_folia_region_tick_duration_seconds{server=\"test\",window=\"1m\",statistic=\"max\"}",
+          "values": "0.06+0x20"
         },
         {
-          "series": "mc_jvm_memory_bytes_used{server=\"test\",area=\"heap\"}",
+          "series": "mc_jvm_memory_used_bytes{server=\"test\",area=\"heap\"}",
           "values": "95+0x20"
         },
         {
-          "series": "mc_jvm_memory_bytes_max{server=\"test\",area=\"heap\"}",
+          "series": "mc_jvm_memory_max_bytes{server=\"test\",area=\"heap\"}",
           "values": "100+0x20"
         },
         {
@@ -270,11 +270,11 @@
           "values": "20+0x20"
         },
         {
-          "series": "mc_jvm_memory_bytes_used{server=\"test\",area=\"heap\"}",
+          "series": "mc_jvm_memory_used_bytes{server=\"test\",area=\"heap\"}",
           "values": "95+0x20"
         },
         {
-          "series": "mc_jvm_memory_bytes_max{server=\"test\",area=\"heap\"}",
+          "series": "mc_jvm_memory_max_bytes{server=\"test\",area=\"heap\"}",
           "values": "-1+0x20"
         },
         {

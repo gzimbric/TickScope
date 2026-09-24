@@ -669,15 +669,15 @@
               },
               {
                 "color": "orange",
-                "value": 25
+                "value": 0.025
               },
               {
                 "color": "red",
-                "value": 50
+                "value": 0.05
               }
             ]
           },
-          "unit": "ms"
+          "unit": "s"
         },
         "overrides": []
       },

@@ -46,7 +46,7 @@ groups:
           summary: 'Folia {{ $labels.server }} has a slow sampled region'
           description: 'A sampled player location has sustained low TPS. Unsampled regions are not represented.'
       - alert: TickScopeFoliaHighMSPT
-        expr: mc_folia_region_mspt_ms{window="1m",statistic="max"} > 50
+        expr: mc_folia_region_tick_duration_seconds{window="1m",statistic="max"} > 0.05
         for: 5m
         labels:
           severity: warning
@@ -55,8 +55,8 @@ groups:
           description: 'The worst sampled regional average exceeds the 50 ms tick budget. Requires regional MSPT API support.'
       - alert: TickScopeHeapPressure
         expr: |
-          (mc_jvm_memory_bytes_used{area="heap"} / mc_jvm_memory_bytes_max{area="heap"} > 0.9)
-          and (mc_jvm_memory_bytes_max{area="heap"} > 0)
+          (mc_jvm_memory_used_bytes{area="heap"} / mc_jvm_memory_max_bytes{area="heap"} > 0.9)
+          and (mc_jvm_memory_max_bytes{area="heap"} > 0)
         for: 10m
         labels:
           severity: warning

@@ -61,11 +61,16 @@ public final class TickScope extends JavaPlugin {
     private final ReentrantLock runtimeLock = new ReentrantLock();
     private volatile MetricsCollector collector;
     private volatile Snapshot latest;
+    private volatile RenderedMetrics rendered;
     private volatile Settings active;
     private boolean stopped;
 
+    private record RenderedMetrics(Snapshot snapshot, MetricsCollector collector,
+                                   long healthRevision, byte[] bytes) {}
+
     record Settings(String serverId, String bind, int port, String path, String token,
                             long interval, boolean perWorld, boolean byType, long scanInterval,
+                            int scanChunksPerTick,
                             Set<String> excludedWorlds, Set<String> allowedTypes) {
         boolean sameEndpoint(Settings other) {
             return other != null && bind.equals(other.bind) && port == other.port
@@ -224,8 +229,13 @@ public final class TickScope extends JavaPlugin {
         boolean byType = bool(config, "entity-types.enabled", true);
         long scanInterval = atLeast(logger, "entity-types.interval-ticks",
                 integral(config, "entity-types.interval-ticks", 600L), 100L);
+        long scanChunks = integral(config, "entity-types.chunks-per-tick", 32L);
+        if (scanChunks < 1 || scanChunks > 1000) {
+            throw new IllegalArgumentException("entity-types.chunks-per-tick must be between 1 and 1000");
+        }
         return new Settings(serverId, bind, port, path, token, interval,
-                perWorld, byType, scanInterval, stringSet(config, "exclude-worlds"),
+                perWorld, byType, scanInterval, (int) scanChunks,
+                stringSet(config, "exclude-worlds"),
                 stringSet(config, "entity-types.allowlist"));
     }
 
@@ -341,7 +351,8 @@ public final class TickScope extends JavaPlugin {
                     () -> guarded(() -> latest = collector.collectPaper()), settings.interval, settings.interval);
             if (settings.perWorld || settings.byType) {
                 scanSampler = scheduler.repeatGlobal(
-                        () -> guarded(collector::collectHeavyWorldData), 40L, settings.scanInterval);
+                        () -> guarded(() -> collector.collectHeavyWorldDataStep(
+                                settings.scanChunksPerTick, settings.scanInterval)), 40L, 1L);
             }
         }
     }
@@ -407,8 +418,7 @@ public final class TickScope extends JavaPlugin {
 
     private void startHttp(Settings settings) throws IOException {
         MetricsHttpServer candidate = new MetricsHttpServer(settings.bind, settings.port,
-                settings.path, settings.token,
-                () -> PrometheusWriter.render(latest, collector.health()).getBytes(StandardCharsets.UTF_8));
+                settings.path, settings.token, this::renderMetrics);
         try {
             candidate.start();
         } catch (RuntimeException e) {
@@ -416,6 +426,25 @@ public final class TickScope extends JavaPlugin {
             throw e;
         }
         http = candidate;
+    }
+
+    /** Share one rendered body across scrapes until collection or health changes. */
+    private byte[] renderMetrics() {
+        Snapshot snapshot = latest;
+        MetricsCollector current = collector;
+        long revision = current.health().revision();
+        RenderedMetrics cache = rendered;
+        if (cache != null && cache.snapshot == snapshot && cache.collector == current
+                && cache.healthRevision == revision) return cache.bytes;
+        synchronized (this) {
+            cache = rendered;
+            if (cache != null && cache.snapshot == snapshot && cache.collector == current
+                    && cache.healthRevision == revision) return cache.bytes;
+            byte[] bytes = PrometheusWriter.render(snapshot, current.health())
+                    .getBytes(StandardCharsets.UTF_8);
+            rendered = new RenderedMetrics(snapshot, current, revision, bytes);
+            return bytes;
+        }
     }
 
     private void stopHttp() {

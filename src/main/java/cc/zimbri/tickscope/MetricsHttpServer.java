@@ -80,6 +80,8 @@ final class MetricsHttpServer implements AutoCloseable {
      * is bounded and self-healing, where previously one client silenced the endpoint outright.
      */
     private static final int QUEUE_DEPTH = 8;
+    /** Leave worker capacity for other scrapers when one address opens slow requests. */
+    private static final int MAX_CONNECTIONS_PER_ADDRESS = 2;
 
     private final ServerSocket listener;
     private final ThreadPoolExecutor workers;
@@ -88,14 +90,21 @@ final class MetricsHttpServer implements AutoCloseable {
     private final String path;
     private final String token;
     private final Supplier<byte[]> body;
+    private final int maxConnectionsPerAddress;
     private volatile boolean running = true;
     private final Set<Socket> connections = new HashSet<>();
 
     MetricsHttpServer(String bindAddress, int port, String path, String token,
                       Supplier<byte[]> body) throws IOException {
+        this(bindAddress, port, path, token, body, MAX_CONNECTIONS_PER_ADDRESS);
+    }
+
+    MetricsHttpServer(String bindAddress, int port, String path, String token,
+                      Supplier<byte[]> body, int maxConnectionsPerAddress) throws IOException {
         this.path = path;
         this.token = token;
         this.body = body;
+        this.maxConnectionsPerAddress = maxConnectionsPerAddress;
 
         ServerSocket candidate = new ServerSocket();
         try {
@@ -177,6 +186,13 @@ final class MetricsHttpServer implements AutoCloseable {
                 if (!running) {
                     closeQuietly(connection);
                     return;
+                }
+                long sameAddress = connections.stream()
+                        .filter(open -> open.getInetAddress().equals(connection.getInetAddress()))
+                        .count();
+                if (sameAddress >= maxConnectionsPerAddress) {
+                    closeQuietly(connection);
+                    continue;
                 }
                 connections.add(connection);
             }

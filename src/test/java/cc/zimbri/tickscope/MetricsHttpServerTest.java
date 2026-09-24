@@ -118,6 +118,18 @@ class MetricsHttpServerTest {
         }
     }
 
+    @Test
+    void oneAddressCannotOccupyEveryWorker() throws IOException {
+        try (Socket first = new Socket("127.0.0.1", server.port());
+             Socket second = new Socket("127.0.0.1", server.port());
+             Socket third = new Socket("127.0.0.1", server.port())) {
+            first.getOutputStream().write("GET /metr".getBytes(StandardCharsets.US_ASCII));
+            second.getOutputStream().write("GET /metr".getBytes(StandardCharsets.US_ASCII));
+            third.setSoTimeout(2000);
+            assertEquals(-1, third.getInputStream().read());
+        }
+    }
+
     /**
      * Enough stalled clients can still occupy every worker, so the guarantee is that the
      * endpoint recovers on its own rather than staying down until the clients disconnect.
@@ -185,6 +197,10 @@ class MetricsHttpServerTest {
 
     @Test
     void shutdownClosesActiveAndQueuedSockets() throws Exception {
+        server.close();
+        server = new MetricsHttpServer("127.0.0.1", 0, "/metrics", "",
+                () -> PAYLOAD.getBytes(StandardCharsets.UTF_8), 5);
+        server.start();
         List<Socket> clients = new ArrayList<>();
         try {
             for (int i = 0; i < 5; i++) clients.add(new Socket("127.0.0.1", server.port()));

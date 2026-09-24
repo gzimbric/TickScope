@@ -19,6 +19,7 @@ package cc.zimbri.tickscope;
 
 import com.sun.management.OperatingSystemMXBean;
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
 import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -80,6 +81,8 @@ final class MetricsCollector {
      * series until the next scan.
      */
     private volatile HeavyWorldData heavy;
+    private WorldScan activeScan;
+    private long scanCooldown;
     private record GeneratedPlayers(long generation, PlayerSample sample) {}
     private final AtomicReference<GeneratedPlayers> foliaPlayers =
             new AtomicReference<>(new GeneratedPlayers(0, PlayerSample.EMPTY));
@@ -234,36 +237,92 @@ final class MetricsCollector {
      * are gathered here, well away from the collection interval.
      */
     void collectHeavyWorldData() {
+        scanCooldown = 0;
+        do {
+            collectHeavyWorldDataStep(Integer.MAX_VALUE, 0);
+        } while (activeScan != null);
+    }
+
+    /** Process at most the configured number of loaded chunks on one Paper tick. */
+    void collectHeavyWorldDataStep(int chunksPerTick, long intervalTicks) {
+        if (activeScan == null && scanCooldown-- > 0) return;
+        long started = System.nanoTime();
         try {
-            scanWorlds();
-            health.success("world");
+            if (activeScan == null) activeScan = new WorldScan();
+            int remaining = chunksPerTick;
+            while (remaining > 0 && activeScan.worldIndex < activeScan.worlds.size()) {
+                WorldEntry entry = activeScan.worlds.get(activeScan.worldIndex);
+                if (activeScan.chunkIndex == entry.chunks.length) {
+                    activeScan.finishWorld(entry);
+                    activeScan.worldIndex++;
+                    activeScan.chunkIndex = 0;
+                    continue;
+                }
+                Chunk chunk = entry.chunks[activeScan.chunkIndex++];
+                remaining--;
+                // A chunk can unload between the initial list and this tick. Never load it
+                // again just for metrics; the next scan will reflect the new world state.
+                if (!chunk.isLoaded()) continue;
+                if (perWorld) entry.tiles += chunk.getTileEntities(false).length;
+                for (Entity entity : chunk.getEntities()) {
+                    if (perWorld) entry.entities++;
+                    if (byType) {
+                        String type = typeName(entity.getType());
+                        if (includedType(type)) entry.types.merge(type, 1, Integer::sum);
+                    }
+                }
+            }
+            activeScan.nanos += System.nanoTime() - started;
+            if (activeScan.worldIndex == activeScan.worlds.size()) {
+                heavy = new HeavyWorldData(List.copyOf(activeScan.totals),
+                        List.copyOf(activeScan.types), activeScan.nanos / NANOS_PER_SEC);
+                activeScan = null;
+                scanCooldown = intervalTicks;
+                health.success("world");
+            }
         } catch (RuntimeException e) {
+            activeScan = null;
+            scanCooldown = intervalTicks;
             health.failure("world");
             throw e;
         }
     }
 
-    private void scanWorlds() {
-        long started = System.nanoTime();
-        List<Snapshot.WorldTotals> totals = new ArrayList<>();
-        List<Snapshot.TypeCount> types = new ArrayList<>();
-        for (World w : Bukkit.getWorlds()) {
-            if (!includedWorld(w.getName())) continue;
-            if (perWorld) {
-                totals.add(new Snapshot.WorldTotals(
-                        w.getName(), w.getEntityCount(), w.getTileEntityCount()));
-            }
-            if (byType) {
-                Map<String, Integer> byTypeName = new HashMap<>();
-                for (Entity e : w.getEntities()) {
-                    String type = typeName(e.getType());
-                    if (includedType(type)) byTypeName.merge(type, 1, Integer::sum);
+    private final class WorldScan {
+        private final List<WorldEntry> worlds = new ArrayList<>();
+        private final List<Snapshot.WorldTotals> totals = new ArrayList<>();
+        private final List<Snapshot.TypeCount> types = new ArrayList<>();
+        private int worldIndex;
+        private int chunkIndex;
+        private long nanos;
+
+        private WorldScan() {
+            for (World world : Bukkit.getWorlds()) {
+                if (includedWorld(world.getName())) {
+                    worlds.add(new WorldEntry(world.getName(), world.getLoadedChunks()));
                 }
-                byTypeName.forEach((type, n) -> types.add(new Snapshot.TypeCount(w.getName(), type, n)));
             }
         }
-        heavy = new HeavyWorldData(List.copyOf(totals), List.copyOf(types),
-                (System.nanoTime() - started) / NANOS_PER_SEC);
+
+        private void finishWorld(WorldEntry entry) {
+            if (perWorld) totals.add(new Snapshot.WorldTotals(
+                    entry.name, entry.entities, entry.tiles));
+            if (byType) entry.types.forEach((type, count) ->
+                    types.add(new Snapshot.TypeCount(entry.name, type, count)));
+        }
+    }
+
+    private static final class WorldEntry {
+        private final String name;
+        private final Chunk[] chunks;
+        private final Map<String, Integer> types = new HashMap<>();
+        private int entities;
+        private int tiles;
+
+        private WorldEntry(String name, Chunk[] chunks) {
+            this.name = name;
+            this.chunks = chunks;
+        }
     }
 
     private Snapshot.Jvm jvm() {
