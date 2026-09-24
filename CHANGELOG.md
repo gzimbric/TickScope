@@ -4,6 +4,14 @@ Release notes are written here by hand. The release workflow reads the section m
 version being tagged and uses it verbatim for the GitHub release and the Modrinth changelog,
 so this file is the one place a user-facing change gets described.
 
+## 2.0.1
+
+- Add Minecraft 26.3 to the Paper compatibility listings on Modrinth and Hangar. The same
+  Java 17 plugin remains compatible with older supported versions; it is also compiled and
+  tested against the Paper 26.3 API in CI.
+- Paper's 26.3 server builds are still marked alpha. Runtime compatibility on 26.3 has not
+  been smoke-tested, so use a stable Paper release for production servers.
+
 ## 2.0.0
 
 - Metrics use base units and conventional names. Tick durations and player ping are in seconds;

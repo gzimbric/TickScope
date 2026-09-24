@@ -93,6 +93,9 @@ Paper 1.18.2+, Paper-compatible Purpur servers, Folia, and Folia-compatible Canv
 supported. Spigot, Bukkit, Velocity, and BungeeCord are not supported. Install TickScope on each
 backend in a proxy network and assign each server a unique `server-id`.
 
+Minecraft 26.3 is listed for compatibility, and CI compiles against its Paper API. Paper's
+26.3 server builds are currently alpha; runtime compatibility has not been smoke-tested.
+
 Paper exposes a single server tick, so TickScope publishes exact `mc_tick_duration_seconds`,
 `mc_tick_samples`, and `mc_tps` series there. Folia has no truthful server-wide equivalent. On Folia, those series are
 intentionally absent and are replaced by `mc_folia_region_tps` summaries sampled at online player
