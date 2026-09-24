@@ -43,7 +43,7 @@ body:
     attributes:
       label: Server version
       description: The full output of `/version`.
-      placeholder: "Paper 26.2-100-main@714512e, or Folia/Canvas equivalent"
+      placeholder: "Paper 26.3 build 40, or Folia/Canvas equivalent"
     validations:
       required: true
 

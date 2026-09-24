@@ -15,10 +15,12 @@
 set -uo pipefail
 
 SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|www\.gnu\.org/licenses|api\.modrinth\.com/v2$|hangar\.papermc\.io/api/v1$|\.example([:/]|$)'
-# The 2.0 tag and new main-branch guide do not exist while the release PR runs.
-# Validate these links explicitly after the merge and release publication.
-if ! git ls-remote --exit-code origin refs/tags/v2.0.0 >/dev/null 2>&1; then
-  SKIP="$SKIP|github\.com/gzimbric/TickScope/(blob|releases/tag)/v2\.0\.0|raw\.githubusercontent\.com/gzimbric/TickScope/v2\.0\.0|github\.com/gzimbric/TickScope/blob/main/docs/metric-migration\.md"
+# Release-tag links cannot resolve while their PR runs. Once the tag exists, check them.
+release_version=$(sed -n '0,/<version>/{s:.*<version>\([^<]*\)</version>.*:\1:p}' pom.xml)
+if [[ -n "$release_version" ]] &&
+   ! git ls-remote --exit-code origin "refs/tags/v$release_version" >/dev/null 2>&1; then
+  release_pattern=${release_version//./\\.}
+  SKIP="$SKIP|github\.com/gzimbric/TickScope/(blob|releases/tag)/v$release_pattern|raw\.githubusercontent\.com/gzimbric/TickScope/v$release_pattern"
 fi
 WIKI_DIR=${WIKI_DIR:-_wiki}
 # Keep in step with the path filters in .github/workflows/link-check.yml. CHANGELOG.md is
