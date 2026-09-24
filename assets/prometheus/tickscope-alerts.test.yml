@@ -1,0 +1,333 @@
+{
+  "rule_files": [
+    "tickscope-alerts.yml"
+  ],
+  "evaluation_interval": "1m",
+  "tests": [
+    {
+      "name": "Sustained failures alert after their hold durations",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"minecraft\",instance=\"localhost:9101\"}",
+          "values": "0+0x20"
+        },
+        {
+          "series": "mc_collection_last_success_timestamp_seconds{server=\"test\",stage=\"main\"}",
+          "values": "0+0x20"
+        },
+        {
+          "series": "mc_collection_last_success_timestamp_seconds{server=\"test\",stage=\"world\"}",
+          "values": "0+0x20"
+        },
+        {
+          "series": "mc_collection_enabled{server=\"test\",stage=\"main\"}",
+          "values": "1+0x20"
+        },
+        {
+          "series": "mc_collection_enabled{server=\"test\",stage=\"world\"}",
+          "values": "1+0x20"
+        },
+        {
+          "series": "mc_tps{server=\"test\",window=\"1m\"}",
+          "values": "17+0x20"
+        },
+        {
+          "series": "mc_folia_region_tps{server=\"test\",window=\"1m\",statistic=\"min\"}",
+          "values": "17+0x20"
+        },
+        {
+          "series": "mc_folia_region_mspt_ms{server=\"test\",window=\"1m\",statistic=\"max\"}",
+          "values": "60+0x20"
+        },
+        {
+          "series": "mc_jvm_memory_bytes_used{server=\"test\",area=\"heap\"}",
+          "values": "95+0x20"
+        },
+        {
+          "series": "mc_jvm_memory_bytes_max{server=\"test\",area=\"heap\"}",
+          "values": "100+0x20"
+        },
+        {
+          "series": "mc_folia_player_samples_completed{server=\"test\"}",
+          "values": "1+0x20"
+        },
+        {
+          "series": "mc_folia_player_samples_expected{server=\"test\"}",
+          "values": "2+0x20"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "1m",
+          "alertname": "TickScopeTargetDown",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeTargetDown",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "job": "minecraft",
+                "instance": "localhost:9101",
+                "severity": "critical"
+              },
+              "exp_annotations": {
+                "summary": "TickScope target localhost:9101 is unreachable",
+                "description": "Check the Minecraft process, scrape endpoint, authentication, and network."
+              }
+            }
+          ]
+        },
+        {
+          "eval_time": "1m",
+          "alertname": "TickScopeCollectionStale",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeCollectionStale",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "server": "test",
+                "stage": "main",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "TickScope test: main collection is stale",
+                "description": "HTTP can remain healthy while collection stops. Check server lag and plugin logs. Tune this threshold above the collection interval."
+              }
+            }
+          ]
+        },
+        {
+          "eval_time": "1m",
+          "alertname": "TickScopeWorldScanStale",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeWorldScanStale",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "server": "test",
+                "stage": "world",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "TickScope test: world scan is stale",
+                "description": "Check scan errors and server lag. Tune the threshold above entity-types.interval-ticks / 20."
+              }
+            }
+          ]
+        },
+        {
+          "eval_time": "1m",
+          "alertname": "TickScopePaperLowTPS",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopePaperLowTPS",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "server": "test",
+                "window": "1m",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Paper test has sustained low TPS",
+                "description": "The one-minute TPS reading has remained below 18 for five minutes."
+              }
+            }
+          ]
+        },
+        {
+          "eval_time": "1m",
+          "alertname": "TickScopeFoliaLowTPS",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeFoliaLowTPS",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "server": "test",
+                "window": "1m",
+                "statistic": "min",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Folia test has a slow sampled region",
+                "description": "A sampled player location has sustained low TPS. Unsampled regions are not represented."
+              }
+            }
+          ]
+        },
+        {
+          "eval_time": "1m",
+          "alertname": "TickScopeFoliaHighMSPT",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeFoliaHighMSPT",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "server": "test",
+                "window": "1m",
+                "statistic": "max",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Folia test has high sampled MSPT",
+                "description": "The worst sampled regional average exceeds the 50 ms tick budget. Requires regional MSPT API support."
+              }
+            }
+          ]
+        },
+        {
+          "eval_time": "1m",
+          "alertname": "TickScopeHeapPressure",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeHeapPressure",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "server": "test",
+                "area": "heap",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Minecraft test has sustained heap pressure",
+                "description": "Heap usage has exceeded 90% of the configured maximum for ten minutes."
+              }
+            }
+          ]
+        },
+        {
+          "eval_time": "1m",
+          "alertname": "TickScopeFoliaIncompleteCoverage",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeFoliaIncompleteCoverage",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "server": "test",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Folia test has incomplete player sampling",
+                "description": "Regional and ping summaries exclude missing player samples. Check lagging regions and player retirement."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Disabled stages, empty servers, unsupported MSPT and unbounded heap do not alert",
+      "interval": "1m",
+      "input_series": [
+        {
+          "series": "up{job=\"minecraft\",instance=\"localhost:9101\"}",
+          "values": "1+0x20"
+        },
+        {
+          "series": "mc_collection_last_success_timestamp_seconds{server=\"test\",stage=\"main\"}",
+          "values": "0+0x20"
+        },
+        {
+          "series": "mc_collection_last_success_timestamp_seconds{server=\"test\",stage=\"world\"}",
+          "values": "0+0x20"
+        },
+        {
+          "series": "mc_collection_enabled{server=\"test\",stage=\"main\"}",
+          "values": "0+0x20"
+        },
+        {
+          "series": "mc_collection_enabled{server=\"test\",stage=\"world\"}",
+          "values": "0+0x20"
+        },
+        {
+          "series": "mc_tps{server=\"test\",window=\"1m\"}",
+          "values": "20+0x20"
+        },
+        {
+          "series": "mc_folia_region_tps{server=\"test\",window=\"1m\",statistic=\"min\"}",
+          "values": "20+0x20"
+        },
+        {
+          "series": "mc_jvm_memory_bytes_used{server=\"test\",area=\"heap\"}",
+          "values": "95+0x20"
+        },
+        {
+          "series": "mc_jvm_memory_bytes_max{server=\"test\",area=\"heap\"}",
+          "values": "-1+0x20"
+        },
+        {
+          "series": "mc_folia_player_samples_completed{server=\"test\"}",
+          "values": "0+0x20"
+        },
+        {
+          "series": "mc_folia_player_samples_expected{server=\"test\"}",
+          "values": "0+0x20"
+        }
+      ],
+      "alert_rule_test": [
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeTargetDown",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeCollectionStale",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeWorldScanStale",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopePaperLowTPS",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeFoliaLowTPS",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeFoliaHighMSPT",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeHeapPressure",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeFoliaIncompleteCoverage",
+          "exp_alerts": []
+        }
+      ]
+    }
+  ]
+}

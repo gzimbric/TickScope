@@ -1,0 +1,73 @@
+groups:
+  - name: tickscope
+    rules:
+      - alert: TickScopeTargetDown
+        expr: up{job="minecraft"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'TickScope target {{ $labels.instance }} is unreachable'
+          description: 'Check the Minecraft process, scrape endpoint, authentication, and network.'
+      - alert: TickScopeCollectionStale
+        expr: |
+          (time() - mc_collection_last_success_timestamp_seconds{stage=~"main|players"} > 30)
+          and (mc_collection_enabled == 1)
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'TickScope {{ $labels.server }}: {{ $labels.stage }} collection is stale'
+          description: 'HTTP can remain healthy while collection stops. Check server lag and plugin logs. Tune this threshold above the collection interval.'
+      - alert: TickScopeWorldScanStale
+        expr: |
+          (time() - mc_collection_last_success_timestamp_seconds{stage="world"} > 120)
+          and (mc_collection_enabled == 1)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'TickScope {{ $labels.server }}: world scan is stale'
+          description: 'Check scan errors and server lag. Tune the threshold above entity-types.interval-ticks / 20.'
+      - alert: TickScopePaperLowTPS
+        expr: mc_tps{window="1m"} < 18
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Paper {{ $labels.server }} has sustained low TPS'
+          description: 'The one-minute TPS reading has remained below 18 for five minutes.'
+      - alert: TickScopeFoliaLowTPS
+        expr: mc_folia_region_tps{window="1m",statistic="min"} < 18
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Folia {{ $labels.server }} has a slow sampled region'
+          description: 'A sampled player location has sustained low TPS. Unsampled regions are not represented.'
+      - alert: TickScopeFoliaHighMSPT
+        expr: mc_folia_region_mspt_ms{window="1m",statistic="max"} > 50
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Folia {{ $labels.server }} has high sampled MSPT'
+          description: 'The worst sampled regional average exceeds the 50 ms tick budget. Requires regional MSPT API support.'
+      - alert: TickScopeHeapPressure
+        expr: |
+          (mc_jvm_memory_bytes_used{area="heap"} / mc_jvm_memory_bytes_max{area="heap"} > 0.9)
+          and (mc_jvm_memory_bytes_max{area="heap"} > 0)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Minecraft {{ $labels.server }} has sustained heap pressure'
+          description: 'Heap usage has exceeded 90% of the configured maximum for ten minutes.'
+      - alert: TickScopeFoliaIncompleteCoverage
+        expr: mc_folia_player_samples_completed < mc_folia_player_samples_expected
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Folia {{ $labels.server }} has incomplete player sampling'
+          description: 'Regional and ping summaries exclude missing player samples. Check lagging regions and player retirement.'
