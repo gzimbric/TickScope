@@ -4,6 +4,27 @@ Release notes are written here by hand. The release workflow reads the section m
 version being tagged and uses it verbatim for the GitHub release and the Modrinth changelog,
 so this file is the one place a user-facing change gets described.
 
+## 2.0.0
+
+- Metrics use base units and conventional names. Tick durations and player ping are in seconds;
+  JVM memory names end in `_bytes`. The Paper tick percentile label is now `statistic`.
+  Update custom queries with the [1.x to 2.0 migration guide](https://github.com/gzimbric/TickScope/blob/v2.0.0/docs/metric-migration.md).
+- Paper world scans process a configurable maximum number of loaded chunks per tick instead of
+  walking every entity and tile entity in one tick. The default is 32 chunks per tick, and the
+  last complete sample remains available while the next scan runs.
+- Repeated scrapes share a rendered metrics body until the snapshot or collection health changes.
+  The HTTP server also limits simultaneous connections from one address so a single slow client
+  cannot occupy every worker.
+- The bundled Grafana dashboards and Prometheus alert rules use the 2.0 metric names and units.
+- Release retries now verify any existing GitHub jar before replacing release assets. The release
+  workflow also publishes the same jar to Hangar and checks its checksum on retries.
+
+**Upgrading:** existing configuration files continue to work. Custom queries and alerts that use
+renamed 1.x metrics must be updated. The scan now gives a per-tick chunk budget; use
+`entity-types.chunks-per-tick` to tune it. Scans can span multiple ticks, so per-world totals
+represent an approximate view over the scan period. The endpoint still binds to loopback by
+default; protect a network-facing listener with a firewall or rate-limiting proxy.
+
 ## 1.5.0
 
 - **Collection health is now visible even when scrapes succeed.** New freshness timestamps,

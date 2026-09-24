@@ -33,7 +33,7 @@ stops advancing and the stale-collection alert detects it.
 A partially successful batch refreshes the player timestamp. A batch with no successful
 readings and at least one requested player does not. An empty server is a successful empty
 batch. Coverage refers to ping reads, not unique regions or successful regional API reads;
-use `mc_folia_region_tps_samples` and `mc_folia_region_mspt_samples` for regional API coverage.
+use `mc_folia_region_tps_samples` and `mc_folia_region_tick_duration_samples` for regional API coverage.
 Multiple players can sample the same region, so averages remain weighted by player locations.
 
 `/tickscope status` also reports stage freshness, failure counts, and filter sizes.
@@ -57,8 +57,10 @@ player events, and Folia player-location sampling, still cover the whole server.
 The allowlist uses registry key names such as `zombie` (without `minecraft:`); an empty list
 means all types. It filters only the entity-type breakdown. Total entities still count every
 entity in included worlds. An allowlist reduces exported series, but still walks each included
-world's entities. World exclusions and the scan interval control that traversal cost. Scans
-remain a consistent single-tick operation; incremental scans have not been introduced.
+world's entities. World exclusions, the scan interval, and `entity-types.chunks-per-tick` control
+that traversal cost. The scan processes a bounded number of loaded chunks per Paper tick.
+Chunks may unload or change while a scan runs, so totals approximate the world over the scan
+period. The previous complete sample remains visible until the next scan finishes.
 
 A reload removes disabled or newly excluded cached series immediately. Widening filters
 populates newly included series at the next slow scan. Malformed YAML, missing files, and

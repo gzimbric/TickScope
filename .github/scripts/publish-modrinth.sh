@@ -86,7 +86,11 @@ else
       '[.[] | select(.version_number == $version) | .files[] | select(.primary) | .hashes.sha512][0] // empty' \
       <<<"$versions")
     local_sha512=$(sha512sum "$ARTIFACT" | cut -d' ' -f1)
-    if [[ -n "$published_sha512" && "$published_sha512" != "$local_sha512" ]]; then
+    if [[ -z "$published_sha512" ]]; then
+      echo "Modrinth did not provide a hash for the existing $VERSION artifact" >&2
+      exit 1
+    fi
+    if [[ "$published_sha512" != "$local_sha512" ]]; then
       echo "the jar built here does not match the file already published as $VERSION" >&2
       echo "  published sha512: $published_sha512" >&2
       echo "  local sha512:     $local_sha512" >&2
@@ -122,6 +126,7 @@ body=$(perl -0pe '
   s#src="assets/grafana/dashboard-preview\.png"#src="https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/dashboard-preview.png"#g;
   s#\]\(assets/grafana/tickscope-dashboard\.json\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/tickscope-dashboard.json)#g;
   s#\]\(docs/monitoring\.md\)#](https://github.com/gzimbric/TickScope/blob/main/docs/monitoring.md)#g;
+  s#\]\(docs/metric-migration\.md\)#](https://github.com/gzimbric/TickScope/blob/main/docs/metric-migration.md)#g;
   s#\]\(assets/prometheus/tickscope-alerts\.yml\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/prometheus/tickscope-alerts.yml)#g;
   s#\]\(assets/grafana/tickscope-per-server-dashboard\.json\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/tickscope-per-server-dashboard.json)#g;
   s#\]\(LICENSE\)#](https://github.com/gzimbric/TickScope/blob/main/LICENSE)#g;
@@ -130,6 +135,7 @@ body=$(perl -0pe '
   s#^1\. \[Download the latest release\]\([^)]*\)\.#1. Download the latest jar from the **Files** tab at the top of this page.#m;
   s#^- \[Download on GitHub\]\([^)]*\)\n##m;
   s#^- \[Download on Modrinth\]\([^)]*\)\n##m;
+  s#^- \[Download on Hangar\]\([^)]*\)\n##m;
   s{^## Download and support$}{## Support}m;
 ' "$REPO_ROOT/README.md")
 project_data=$(jq -cn --arg body "$body" \

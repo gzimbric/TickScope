@@ -191,7 +191,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_jvm_memory_bytes_used{server=~\"$server\",area=\"heap\"}",
+          "expr": "mc_jvm_memory_used_bytes{server=~\"$server\",area=\"heap\"}",
           "instant": false,
           "legendFormat": "{{server}} \u00b7 used",
           "range": true,
@@ -202,7 +202,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_jvm_memory_bytes_committed{server=~\"$server\",area=\"heap\"}",
+          "expr": "mc_jvm_memory_committed_bytes{server=~\"$server\",area=\"heap\"}",
           "instant": false,
           "legendFormat": "{{server}} \u00b7 committed",
           "range": true,
@@ -213,7 +213,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_jvm_memory_bytes_max{server=~\"$server\",area=\"heap\"}",
+          "expr": "mc_jvm_memory_max_bytes{server=~\"$server\",area=\"heap\"}",
           "instant": false,
           "legendFormat": "{{server}} \u00b7 max",
           "range": true,

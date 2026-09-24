@@ -54,6 +54,7 @@ class SettingsTest {
         var defaults = TickScope.parseSettings(config, logger);
         assertEquals(9101, defaults.port());
         assertTrue(defaults.excludedWorlds().isEmpty());
+        assertEquals(32, defaults.scanChunksPerTick());
         config.set("exclude-worlds", List.of("lobby"));
         config.set("entity-types.allowlist", List.of("zombie", "chicken"));
         var filtered = TickScope.parseSettings(config, logger);
@@ -63,5 +64,16 @@ class SettingsTest {
         assertThrows(IllegalArgumentException.class, () -> TickScope.parseSettings(config, logger));
         config.set("exclude-worlds", List.of(42));
         assertThrows(IllegalArgumentException.class, () -> TickScope.parseSettings(config, logger));
+    }
+
+    @Test void validatesChunkBudget() {
+        var config = new YamlConfiguration();
+        for (int bad : List.of(0, -1, 1001)) {
+            config.set("entity-types.chunks-per-tick", bad);
+            assertThrows(IllegalArgumentException.class,
+                    () -> TickScope.parseSettings(config, logger));
+        }
+        config.set("entity-types.chunks-per-tick", 16);
+        assertEquals(16, TickScope.parseSettings(config, logger).scanChunksPerTick());
     }
 }

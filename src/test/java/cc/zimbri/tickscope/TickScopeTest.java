@@ -72,7 +72,7 @@ class TickScopeTest {
             }
             start.countDown();
             for (var future : futures) future.get(5, java.util.concurrent.TimeUnit.SECONDS);
-            assertEquals(1000, collector.foliaPlayerSample().pingMaxMs());
+            assertEquals(1000, collector.foliaPlayerSample().pingMaximumSeconds());
             assertEquals(1000, collector.health().snapshot().get("players").completed());
             assertFalse(collector.updateFoliaPlayers(999, MetricsCollector.PlayerSample.EMPTY));
         } finally { pool.shutdownNow(); }

@@ -10,8 +10,10 @@
 package cc.zimbri.tickscope;
 
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
 import org.bukkit.Server;
 import org.bukkit.World;
+import org.bukkit.block.BlockState;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.plugin.Plugin;
@@ -24,6 +26,7 @@ import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CollectorIntegrationTest {
@@ -96,20 +99,62 @@ class CollectorIntegrationTest {
         fail.set(false); c.collectPaper();
         assertTrue(c.health().snapshot().get("main").lastSuccess() >= success);
     }
+    @Test void worldScanRespectsPerTickChunkBudgetAndPublishesOnlyCompleteTotals() {
+        AtomicInteger visited = new AtomicInteger();
+        Chunk[] chunks = new Chunk[3];
+        for (int i = 0; i < chunks.length; i++) {
+            chunks[i] = (Chunk) Proxy.newProxyInstance(getClass().getClassLoader(),
+                    new Class<?>[]{Chunk.class}, (p, m, a) -> switch (m.getName()) {
+                        case "isLoaded" -> true;
+                        case "getEntities" -> {
+                            visited.incrementAndGet();
+                            yield new Entity[]{entity(EntityType.ZOMBIE)};
+                        }
+                        case "getTileEntities" -> new BlockState[1];
+                        default -> throw new UnsupportedOperationException(m.getName());
+                    });
+        }
+        worlds = List.of((World) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{World.class}, (p, m, a) -> switch (m.getName()) {
+                    case "getName" -> "world";
+                    case "getLoadedChunks" -> chunks;
+                    case "getChunkCount" -> chunks.length;
+                    case "getPlayerCount" -> 0;
+                    default -> throw new UnsupportedOperationException(m.getName());
+                }));
+        var c = collector(true, true, null, Set.of(), Set.of());
+        for (int step = 1; step <= 3; step++) {
+            c.collectHeavyWorldDataStep(1, 600);
+            assertEquals(step, visited.get());
+            assertTrue(c.heavyWorldData().totals().isEmpty());
+        }
+        c.collectHeavyWorldDataStep(1, 600);
+        assertEquals(List.of(new Snapshot.WorldTotals("world", 3, 3)),
+                c.heavyWorldData().totals());
+        assertEquals(List.of(new Snapshot.TypeCount("world", "zombie", 3)),
+                c.heavyWorldData().types());
+        c.collectHeavyWorldDataStep(1, 600);
+        assertEquals(3, visited.get(), "a completed scan waits for its next interval");
+    }
     private Entity entity(EntityType type) {
         return (Entity) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{Entity.class},
                 (p, m, a) -> type);
     }
     private World world(String name, boolean excluded, List<Entity> entities) {
+        Chunk chunk = (Chunk) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{Chunk.class}, (p, m, a) -> switch (m.getName()) {
+                    case "isLoaded" -> true;
+                    case "getEntities" -> entities.toArray(Entity[]::new);
+                    case "getTileEntities" -> new BlockState[3];
+                    default -> throw new UnsupportedOperationException(m.getName());
+                });
         return (World) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{World.class}, (p, m, a) -> {
             if (m.getName().equals("getName")) return name;
             if (excluded) throw new AssertionError("Excluded world was read: " + m.getName());
             return switch (m.getName()) {
-                case "getEntityCount" -> entities.size();
-                case "getTileEntityCount" -> 3;
                 case "getChunkCount" -> 10;
                 case "getPlayerCount" -> 0;
-                case "getEntities" -> entities;
+                case "getLoadedChunks" -> new Chunk[]{chunk};
                 default -> throw new UnsupportedOperationException(m.getName());
             };
         });

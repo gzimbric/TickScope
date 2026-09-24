@@ -43,6 +43,8 @@ entity-types:
   # off keeps the cheaper per-world totals; interval-ticks still governs both.
   enabled: true
   interval-ticks: 600
+  # Maximum loaded chunks inspected on one Paper tick. A scan may span multiple ticks.
+  chunks-per-tick: 32
   # Optional registry names to export, e.g. [zombie, chicken]. Empty means all types.
   # Filters the breakdown only; per-world entity totals still include every entity.
   # This reduces exported series, but the included world's entities are still walked.

@@ -9,12 +9,15 @@
 [![Folia](https://img.shields.io/badge/Folia-supported-8a5cf5.svg)](https://papermc.io/software/folia)
 [![Java 17+](https://img.shields.io/badge/Java-17%2B-red.svg)](https://adoptium.net)
 
+**Upgrading from 1.x:** 2.0 changes several metric names and expresses tick duration and ping
+in seconds. Update dashboards and alerts with the [migration guide](docs/metric-migration.md).
+
 TickScope is a lightweight Prometheus exporter for Minecraft Paper and Folia servers. The
 dependency-free plugin exposes tick health, players, per-world counters, JVM and CPU statistics,
 and player event counters for dashboards in Grafana.
 
 ```text
-mc_mspt_ms{quantile="p99"} 21.6336
+mc_tick_duration_seconds{statistic="p99"} 0.0216
 mc_tps{window="1m"} 20.0
 mc_players_online 4
 mc_world_entities_by_type{world="world",type="chicken"} 35
@@ -70,7 +73,8 @@ See [health metrics, filters, and setup instructions](docs/monitoring.md), the
 
 ## Documentation
 
-The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickScope/wiki):
+The full manual lives in the [TickScope wiki](https://github.com/gzimbric/TickScope/wiki).
+See the [2.0 metric migration guide](docs/metric-migration.md) for changed names and units.
 
 | Guide | Covers |
 |---|---|
@@ -89,24 +93,26 @@ Paper 1.18.2+, Paper-compatible Purpur servers, Folia, and Folia-compatible Canv
 supported. Spigot, Bukkit, Velocity, and BungeeCord are not supported. Install TickScope on each
 backend in a proxy network and assign each server a unique `server-id`.
 
-Paper exposes a single server tick, so TickScope publishes exact `mc_mspt_ms`, `mc_tick_samples`,
-and `mc_tps` series there. Folia has no truthful server-wide equivalent. On Folia, those series are
+Paper exposes a single server tick, so TickScope publishes exact `mc_tick_duration_seconds`,
+`mc_tick_samples`, and `mc_tps` series there. Folia has no truthful server-wide equivalent. On Folia, those series are
 intentionally absent and are replaced by `mc_folia_region_tps` summaries sampled at online player
 locations. Servers exposing regional average tick times, including Canvas, also receive
-`mc_folia_region_mspt_ms`; this is average MSPT per player-active region rather than a global
-percentile. Per-world entity totals, tile-entity totals, and the entity-type breakdown are
+`mc_folia_region_tick_duration_seconds`; this is average tick duration per player-active region
+rather than a global percentile. Per-world entity totals, tile-entity totals, and the entity-type breakdown are
 unavailable on Folia, because walking a world crosses region ownership boundaries; per-world chunk
 and player counts, and all other server, player, event, JVM, and process metrics, remain
 available.
 
 On Paper those three series come from a slower scan (`entity-types.interval-ticks`, 600 ticks by
-default) rather than from every collection, because counting tile entities walks the loaded chunks
-and, before Minecraft 26, counting entities walked every entity.
+default). It inspects at most `entity-types.chunks-per-tick` loaded chunks on each tick, 32 by
+default. A scan may therefore span multiple ticks; its totals are an approximate view of the
+world over that interval.
 
 ## Download and support
 
 - [Download on GitHub](https://github.com/gzimbric/TickScope/releases/latest)
 - [Download on Modrinth](https://modrinth.com/plugin/tickscope)
+- [Download on Hangar](https://hangar.papermc.io/gzimbric/TickScope)
 - [Report a bug](https://github.com/gzimbric/TickScope/issues/new?template=bug_report.yml)
 - [Request a feature](https://github.com/gzimbric/TickScope/issues/new?template=feature_request.yml)
 - [Ask a question](https://github.com/gzimbric/TickScope/discussions)

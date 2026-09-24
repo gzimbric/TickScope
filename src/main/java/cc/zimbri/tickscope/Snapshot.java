@@ -43,14 +43,14 @@ record Snapshot(
         int playersOnline,
         int playersMax,
         int plugins,
-        double pingAvgMs,
-        int pingMaxMs,
+        double pingAverageSeconds,
+        double pingMaximumSeconds,
         int pingSamples,
         List<WorldStat> worlds,
         List<WorldTotals> worldTotals,
         List<TypeCount> entityTypes,
         List<RegionTps> regionTps,
-        List<RegionMspt> regionMspt,
+        List<RegionTickDuration> regionTickDurations,
         Jvm jvm,
         Proc proc,
         Map<String, Long> events) {
@@ -61,7 +61,7 @@ record Snapshot(
         worldTotals = List.copyOf(worldTotals);
         entityTypes = List.copyOf(entityTypes);
         regionTps = List.copyOf(regionTps);
-        regionMspt = List.copyOf(regionMspt);
+        regionTickDurations = List.copyOf(regionTickDurations);
         events = Collections.unmodifiableMap(new LinkedHashMap<>(events));
     }
 
@@ -70,8 +70,8 @@ record Snapshot(
         return tps.clone();
     }
 
-    record Ticks(double avgMs, double minMs, double maxMs,
-                 double p50Ms, double p95Ms, double p99Ms, int samples) {
+    record Ticks(double averageSeconds, double minimumSeconds, double maximumSeconds,
+                 double p50Seconds, double p95Seconds, double p99Seconds, int samples) {
         static final Ticks EMPTY = new Ticks(0, 0, 0, 0, 0, 0, 0);
     }
 
@@ -90,8 +90,10 @@ record Snapshot(
     /** Folia TPS summaries sampled at player-owned regions; samples may share a region. */
     record RegionTps(String window, int samples, double min, double avg, double max) {}
 
-    /** Folia MSPT summaries sampled at player-owned regions; samples may share a region. */
-    record RegionMspt(String window, int samples, double min, double avg, double max) {}
+    /** Folia tick-duration summaries sampled at player-owned regions; samples may share a region. */
+    record RegionTickDuration(String window, int samples,
+                              double minimumSeconds, double averageSeconds,
+                              double maximumSeconds) {}
 
     record Gc(String name, long count, double seconds) {}
 
@@ -114,7 +116,7 @@ record Snapshot(
         return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion,
                 platform,
                 0d, 0d, Ticks.EMPTY, new double[]{0, 0, 0},
-                0, 0, 0, 0d, 0, 0,
+                0, 0, 0, 0d, 0d, 0,
                 List.of(), List.of(), List.of(), List.of(), List.of(),
                 new Jvm(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, List.of()),
                 new Proc(0, 0, 0, 0, 0), Map.of());

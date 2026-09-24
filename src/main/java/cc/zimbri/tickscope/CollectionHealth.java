@@ -12,11 +12,15 @@ package cc.zimbri.tickscope;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Independent of snapshots so failures remain visible when snapshot publication stops. */
 final class CollectionHealth {
     record Reading(boolean enabled, double lastSuccess, long failures, int completed, int expected) {}
     private final Map<String, AtomicReference<Reading>> stages = new LinkedHashMap<>();
+    private final AtomicLong revision = new AtomicLong();
+
+    long revision() { return revision.get(); }
 
     CollectionHealth(boolean worldScan, boolean folia) {
         stages.put("main", stage(true));
@@ -31,17 +35,20 @@ final class CollectionHealth {
     void success(String stage) {
         stages.get(stage).updateAndGet(r -> new Reading(r.enabled(), now(), r.failures(),
                 r.completed(), r.expected()));
+        revision.incrementAndGet();
     }
 
     void failure(String stage) {
         stages.get(stage).updateAndGet(r -> new Reading(r.enabled(), r.lastSuccess(),
                 r.failures() + 1, r.completed(), r.expected()));
+        revision.incrementAndGet();
     }
 
     void players(int completed, int expected) {
         stages.get("players").updateAndGet(r -> new Reading(r.enabled(),
                 completed > 0 || expected == 0 ? now() : r.lastSuccess(),
                 r.failures() + (completed < expected ? 1 : 0), completed, expected));
+        revision.incrementAndGet();
     }
 
     Map<String, Reading> snapshot() {

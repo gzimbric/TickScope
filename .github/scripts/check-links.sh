@@ -14,7 +14,12 @@
 # is Bash 4 only and is deliberately avoided.
 set -uo pipefail
 
-SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|www\.gnu\.org/licenses|api\.modrinth\.com/v2$|\.example([:/]|$)'
+SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|www\.gnu\.org/licenses|api\.modrinth\.com/v2$|hangar\.papermc\.io/api/v1$|\.example([:/]|$)'
+# The 2.0 tag and new main-branch guide do not exist while the release PR runs.
+# Validate these links explicitly after the merge and release publication.
+if ! git ls-remote --exit-code origin refs/tags/v2.0.0 >/dev/null 2>&1; then
+  SKIP="$SKIP|github\.com/gzimbric/TickScope/(blob|releases/tag)/v2\.0\.0|raw\.githubusercontent\.com/gzimbric/TickScope/v2\.0\.0|github\.com/gzimbric/TickScope/blob/main/docs/metric-migration\.md"
+fi
 WIKI_DIR=${WIKI_DIR:-_wiki}
 # Keep in step with the path filters in .github/workflows/link-check.yml. CHANGELOG.md is
 # included because the release workflow publishes it verbatim as the release notes.

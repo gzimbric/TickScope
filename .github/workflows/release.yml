@@ -125,9 +125,11 @@ jobs:
         run: |
           artifact="source/target/TickScope-$VERSION.jar"
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            published=$(mktemp -d)
-            if gh release download "$RELEASE_TAG" --pattern "TickScope-$VERSION.jar" \
-                 --dir "$published" >/dev/null 2>&1; then
+            asset_names=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name')
+            if grep -Fxq "TickScope-$VERSION.jar" <<<"$asset_names"; then
+              published=$(mktemp -d)
+              gh release download "$RELEASE_TAG" --pattern "TickScope-$VERSION.jar" \
+                --dir "$published"
               local_sum=$(sha256sum "$artifact" | cut -d' ' -f1)
               published_sum=$(sha256sum "$published/TickScope-$VERSION.jar" | cut -d' ' -f1)
               if [[ "$local_sum" != "$published_sum" ]]; then
@@ -137,6 +139,10 @@ jobs:
                 exit 1
               fi
               echo "Rebuilt jar is byte-identical to the published asset."
+              rm -rf "$published"
+            elif grep -Fxq "TickScope-$VERSION.jar.sha256" <<<"$asset_names"; then
+              echo "::error::Release has a checksum but no jar; refusing an ambiguous retry." >&2
+              exit 1
             fi
             gh release upload "$RELEASE_TAG" "$artifact" "$artifact.sha256" --clobber
           else
@@ -154,4 +160,13 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           bash tooling/.github/scripts/publish-modrinth.sh "$VERSION" \
+            "source/target/TickScope-$VERSION.jar" "$RUNNER_TEMP/release-notes.md"
+
+      - name: Publish Hangar release
+        env:
+          HANGAR_API_TOKEN: ${{ secrets.HANGAR_API_TOKEN }}
+          REPO_ROOT: tooling
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          bash tooling/.github/scripts/publish-hangar.sh "$VERSION" \
             "source/target/TickScope-$VERSION.jar" "$RUNNER_TEMP/release-notes.md"

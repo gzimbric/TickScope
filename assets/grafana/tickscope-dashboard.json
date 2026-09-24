@@ -162,15 +162,15 @@
               },
               {
                 "color": "orange",
-                "value": 25
+                "value": 0.025
               },
               {
                 "color": "red",
-                "value": 50
+                "value": 0.05
               }
             ]
           },
-          "unit": "ms"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -199,7 +199,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_mspt_ms{server=~\"$server\",quantile=\"p50\"}",
+          "expr": "mc_tick_duration_seconds{server=~\"$server\",statistic=\"p50\"}",
           "instant": true,
           "legendFormat": "{{server}}",
           "range": false,
@@ -230,15 +230,15 @@
               },
               {
                 "color": "orange",
-                "value": 25
+                "value": 0.025
               },
               {
                 "color": "red",
-                "value": 50
+                "value": 0.05
               }
             ]
           },
-          "unit": "ms"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -267,7 +267,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_mspt_ms{server=~\"$server\",quantile=\"p95\"}",
+          "expr": "mc_tick_duration_seconds{server=~\"$server\",statistic=\"p95\"}",
           "instant": true,
           "legendFormat": "{{server}}",
           "range": false,
@@ -298,15 +298,15 @@
               },
               {
                 "color": "orange",
-                "value": 25
+                "value": 0.025
               },
               {
                 "color": "red",
-                "value": 50
+                "value": 0.05
               }
             ]
           },
-          "unit": "ms"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -335,7 +335,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_mspt_ms{server=~\"$server\",quantile=\"p99\"}",
+          "expr": "mc_tick_duration_seconds{server=~\"$server\",statistic=\"p99\"}",
           "instant": true,
           "legendFormat": "{{server}}",
           "range": false,
@@ -395,7 +395,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_jvm_memory_bytes_used{server=~\"$server\",area=\"heap\"}",
+          "expr": "mc_jvm_memory_used_bytes{server=~\"$server\",area=\"heap\"}",
           "instant": true,
           "legendFormat": "{{server}}",
           "range": false,
@@ -449,15 +449,15 @@
               },
               {
                 "color": "orange",
-                "value": 25
+                "value": 0.025
               },
               {
                 "color": "red",
-                "value": 50
+                "value": 0.05
               }
             ]
           },
-          "unit": "ms"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -488,9 +488,9 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_mspt_ms{server=~\"$server\"}",
+          "expr": "mc_tick_duration_seconds{server=~\"$server\"}",
           "instant": false,
-          "legendFormat": "{{server}} \u00b7 {{quantile}}",
+          "legendFormat": "{{server}} \u00b7 {{statistic}}",
           "range": true,
           "refId": "A"
         }
@@ -669,15 +669,15 @@
               },
               {
                 "color": "orange",
-                "value": 25
+                "value": 0.025
               },
               {
                 "color": "red",
-                "value": 50
+                "value": 0.05
               }
             ]
           },
-          "unit": "ms"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -708,7 +708,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_folia_region_mspt_ms{server=~\"$server\",statistic=\"avg\"}",
+          "expr": "mc_folia_region_tick_duration_seconds{server=~\"$server\",statistic=\"avg\"}",
           "legendFormat": "{{server}} \u00b7 {{window}} avg",
           "refId": "A"
         },
@@ -717,7 +717,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_folia_region_mspt_ms{server=~\"$server\",statistic=\"max\"}",
+          "expr": "mc_folia_region_tick_duration_seconds{server=~\"$server\",statistic=\"max\"}",
           "legendFormat": "{{server}} \u00b7 {{window}} worst region",
           "refId": "B"
         }
@@ -788,7 +788,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_jvm_memory_bytes_used{server=~\"$server\",area=\"heap\"}",
+          "expr": "mc_jvm_memory_used_bytes{server=~\"$server\",area=\"heap\"}",
           "instant": false,
           "legendFormat": "{{server}} \u00b7 used",
           "range": true,
@@ -799,7 +799,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_jvm_memory_bytes_committed{server=~\"$server\",area=\"heap\"}",
+          "expr": "mc_jvm_memory_committed_bytes{server=~\"$server\",area=\"heap\"}",
           "instant": false,
           "legendFormat": "{{server}} \u00b7 committed",
           "range": true,
@@ -810,7 +810,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_jvm_memory_bytes_max{server=~\"$server\",area=\"heap\"}",
+          "expr": "mc_jvm_memory_max_bytes{server=~\"$server\",area=\"heap\"}",
           "instant": false,
           "legendFormat": "{{server}} \u00b7 max",
           "range": true,
@@ -1451,7 +1451,7 @@
               "mode": "none"
             }
           },
-          "unit": "ms"
+          "unit": "s"
         },
         "overrides": []
       },
@@ -1482,7 +1482,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_player_ping_avg_ms{server=~\"$server\"}",
+          "expr": "mc_player_ping_seconds{server=~\"$server\",statistic=\"avg\"}",
           "instant": false,
           "legendFormat": "{{server}} \u00b7 mean",
           "range": true,
@@ -1493,7 +1493,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "mc_player_ping_max_ms{server=~\"$server\"}",
+          "expr": "mc_player_ping_seconds{server=~\"$server\",statistic=\"max\"}",
           "instant": false,
           "legendFormat": "{{server}} \u00b7 worst",
           "range": true,
