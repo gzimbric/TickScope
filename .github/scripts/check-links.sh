@@ -16,7 +16,7 @@ set -uo pipefail
 
 SKIP='127\.0\.0\.1|localhost|maven\.apache\.org/POM|www\.w3\.org/|www\.gnu\.org/licenses|api\.modrinth\.com/v2$|hangar\.papermc\.io/api/v1$|\.example([:/]|$)'
 # Release-tag links cannot resolve while their PR runs. Once the tag exists, check them.
-release_version=$(sed -n '0,/<version>/{s:.*<version>\([^<]*\)</version>.*:\1:p}' pom.xml)
+release_version=$(awk -F'[<>]' '/^[[:space:]]*<version>/{print $3; exit}' pom.xml)
 if [[ -n "$release_version" ]] &&
    ! git ls-remote --exit-code origin "refs/tags/v$release_version" >/dev/null 2>&1; then
   release_pattern=${release_version//./\\.}
