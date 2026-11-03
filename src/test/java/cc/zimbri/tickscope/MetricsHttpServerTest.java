@@ -28,14 +28,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MetricsHttpServerTest {
 
     private static final String PAYLOAD = "mc_up 1\n";
+    private static final int READ_TIMEOUT_MS = 3_000;
+    private static final long DEADLINE_MS = 15_000L;
 
     private MetricsHttpServer server;
     private String token = "";
+    private final List<Throwable> reported = new ArrayList<>();
+    private final ScrapeStats stats = new ScrapeStats();
 
     @BeforeEach
     void start() throws IOException {
-        server = new MetricsHttpServer("127.0.0.1", 0, "/metrics", token,
-                () -> PAYLOAD.getBytes(StandardCharsets.UTF_8));
+        server = server(token, () -> PAYLOAD.getBytes(StandardCharsets.UTF_8));
         server.start();
     }
 
@@ -44,12 +47,28 @@ class MetricsHttpServerTest {
         if (server != null) server.close();
     }
 
-    private void restartWithToken(String configured) throws IOException {
+    private MetricsHttpServer server(String token, java.util.function.Supplier<byte[]> body)
+            throws IOException {
+        return server(token, body, 2, READ_TIMEOUT_MS, DEADLINE_MS);
+    }
+
+    private MetricsHttpServer server(String token, java.util.function.Supplier<byte[]> body,
+                                     int perAddress, int readTimeoutMs, long deadlineMs)
+            throws IOException {
+        return new MetricsHttpServer("127.0.0.1", 0, "/metrics",
+                token.isEmpty() ? List.of() : List.of(token), body, reported::add, stats,
+                new MetricsHttpServer.Options(perAddress, readTimeoutMs, deadlineMs));
+    }
+
+    private void restart(MetricsHttpServer replacement) {
         server.close();
-        token = configured;
-        server = new MetricsHttpServer("127.0.0.1", 0, "/metrics", token,
-                () -> PAYLOAD.getBytes(StandardCharsets.UTF_8));
+        server = replacement;
         server.start();
+    }
+
+    private void restartWithToken(String configured) throws IOException {
+        token = configured;
+        restart(server(token, () -> PAYLOAD.getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test
@@ -183,8 +202,9 @@ class MetricsHttpServerTest {
 
         // Rebinding immediately proves the listener is really gone, which is what a reload
         // that changes only the token depends on.
-        MetricsHttpServer replacement = new MetricsHttpServer("127.0.0.1", port, "/metrics", "",
-                () -> PAYLOAD.getBytes(StandardCharsets.UTF_8));
+        MetricsHttpServer replacement = new MetricsHttpServer("127.0.0.1", port, "/metrics", List.of(),
+                () -> PAYLOAD.getBytes(StandardCharsets.UTF_8), reported::add, stats,
+                MetricsHttpServer.Options.withConnectionsPerAddress(2));
         replacement.start();
         try {
             assertEquals(port, replacement.port());
@@ -197,10 +217,7 @@ class MetricsHttpServerTest {
 
     @Test
     void shutdownClosesActiveAndQueuedSockets() throws Exception {
-        server.close();
-        server = new MetricsHttpServer("127.0.0.1", 0, "/metrics", "",
-                () -> PAYLOAD.getBytes(StandardCharsets.UTF_8), 5);
-        server.start();
+        restart(server("", () -> PAYLOAD.getBytes(StandardCharsets.UTF_8), 5, READ_TIMEOUT_MS, DEADLINE_MS));
         List<Socket> clients = new ArrayList<>();
         try {
             for (int i = 0; i < 5; i++) clients.add(new Socket("127.0.0.1", server.port()));
@@ -225,13 +242,11 @@ class MetricsHttpServerTest {
 
     @Test
     void shutdownUnblocksAWriterWhoseClientNeverReads() throws Exception {
-        server.close();
         var rendering = new java.util.concurrent.CountDownLatch(1);
-        server = new MetricsHttpServer("127.0.0.1", 0, "/metrics", "", () -> {
+        restart(server("", () -> {
             rendering.countDown();
             return new byte[16 * 1024 * 1024];
-        });
-        server.start();
+        }));
         try (Socket client = new Socket()) {
             client.setReceiveBufferSize(1024);
             client.connect(new java.net.InetSocketAddress("127.0.0.1", server.port()));
@@ -244,6 +259,230 @@ class MetricsHttpServerTest {
             server.close();
             assertTrue(workers.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS),
                     "Closing must release writers without waiting for the client or watchdog");
+        }
+    }
+
+    @Test
+    void aRendererFailureIsReportedAndAnsweredWith500() throws IOException {
+        var broken = new java.util.concurrent.atomic.AtomicBoolean(true);
+        restart(server("", () -> {
+            if (broken.get()) throw new IllegalStateException("renderer bug");
+            return PAYLOAD.getBytes(StandardCharsets.UTF_8);
+        }));
+
+        Response first = request("GET /metrics HTTP/1.1", null);
+        assertEquals(500, first.status, "a scrape must not just see the connection closed");
+        assertEquals("0", first.header("content-length"));
+        assertEquals(500, request("GET /metrics HTTP/1.1", null).status);
+        assertEquals(1, reported.size(), "a persistent fault is reported once, not once per scrape");
+        assertEquals("renderer bug", reported.get(0).getMessage());
+
+        broken.set(false);
+        assertEquals(200, request("GET /metrics HTTP/1.1", null).status, "the workers survive it");
+    }
+
+    @Test
+    void aConfiguredTokenIsCheckedBeforeThePathAndMethod() throws IOException {
+        restartWithToken("s3cret");
+
+        // Without the token, nothing distinguishes the configured path from any other.
+        assertEquals(401, request("GET /elsewhere HTTP/1.1", null).status);
+        assertEquals(401, request("POST /metrics HTTP/1.1", null).status);
+        assertEquals(404, request("GET /elsewhere HTTP/1.1", "Bearer s3cret").status);
+        assertEquals(405, request("POST /metrics HTTP/1.1", "Bearer s3cret").status);
+    }
+
+    @Test
+    void overlongLinesAreRefusedWithAStatusInsteadOfSilence() throws IOException {
+        String longTarget = "/metrics?" + "x".repeat(9_000);
+        Response line = raw("GET " + longTarget + " HTTP/1.1\r\nHost: x\r\n\r\n");
+        assertEquals(414, line.status);
+
+        Response header = raw("GET /metrics HTTP/1.1\r\nCookie: " + "y".repeat(9_000) + "\r\n\r\n");
+        assertEquals(431, header.status);
+    }
+
+    @Test
+    void blankLinesAheadOfTheRequestLineAreIgnored() throws IOException {
+        // RFC 9112 asks servers to tolerate this; a client's stray CRLF is not a bad request.
+        assertEquals(200, raw("\r\nGET /metrics HTTP/1.1\r\nHost: x\r\n\r\n").status);
+        assertEquals(400, raw("\r\n\r\n\r\nGET /metrics HTTP/1.1\r\nHost: x\r\n\r\n").status,
+                "but not an unbounded run of them");
+    }
+
+    /**
+     * The deadline has to start at accept time: a connection waiting in the queue behind
+     * stalled ones is never read, so neither the read timeout nor a deadline scheduled by the
+     * worker that eventually dequeues it could end it.
+     */
+    @Test
+    void aQueuedConnectionIsClosedByTheDeadlineBeforeAnyWorkerReachesIt() throws Exception {
+        var release = new java.util.concurrent.CountDownLatch(1);
+        restart(server("", () -> {
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return PAYLOAD.getBytes(StandardCharsets.UTF_8);
+        }, 16, READ_TIMEOUT_MS, 400L));
+        List<Socket> occupying = new ArrayList<>();
+        try {
+            for (int i = 0; i < 4; i++) {
+                Socket worker = new Socket("127.0.0.1", server.port());
+                worker.getOutputStream().write("GET /metrics HTTP/1.1\r\nHost: x\r\n\r\n"
+                        .getBytes(StandardCharsets.US_ASCII));
+                occupying.add(worker);
+            }
+            try (Socket queued = new Socket("127.0.0.1", server.port())) {
+                queued.setSoTimeout(5_000);
+                queued.getOutputStream().write("GET /metrics HTTP/1.1\r\nHost: x\r\n\r\n"
+                        .getBytes(StandardCharsets.US_ASCII));
+                long started = System.nanoTime();
+                try {
+                    assertEquals(-1, queued.getInputStream().read());
+                } catch (java.net.SocketException reset) {
+                    // A reset is also a closed connection.
+                }
+                long heldMs = (System.nanoTime() - started) / 1_000_000L;
+                assertTrue(heldMs < 3_000, "closed by the 400 ms deadline, not by anything slower: " + heldMs);
+            }
+        } finally {
+            release.countDown();
+            for (Socket socket : occupying) socket.close();
+        }
+    }
+
+    /** A client that keeps trickling bytes never trips the read timeout; the deadline ends it. */
+    @Test
+    void aDripFeedingClientIsDisconnectedAtTheDeadline() throws Exception {
+        restart(server("", () -> PAYLOAD.getBytes(StandardCharsets.UTF_8), 2, 2_000, 500L));
+        try (Socket drip = new Socket("127.0.0.1", server.port())) {
+            drip.setSoTimeout(5_000);
+            OutputStream out = drip.getOutputStream();
+            long started = System.nanoTime();
+            boolean closed = false;
+            for (int i = 0; i < 40 && !closed; i++) {
+                try {
+                    out.write('G');
+                    out.flush();
+                    Thread.sleep(100L);
+                } catch (IOException gone) {
+                    closed = true;
+                }
+            }
+            long heldMs = (System.nanoTime() - started) / 1_000_000L;
+            assertTrue(closed || drip.getInputStream().read() == -1, "the deadline closed the socket");
+            assertTrue(heldMs < 2_000, "well before the 2 s read timeout could have: " + heldMs);
+        }
+    }
+
+    @Test
+    void completedScrapesDoNotRetainTheirWatchdogTasks() throws Exception {
+        for (int i = 0; i < 20; i++) assertEquals(200, request("GET /metrics HTTP/1.1", null).status);
+        var field = MetricsHttpServer.class.getDeclaredField("deadlines");
+        field.setAccessible(true);
+        var deadlines = (java.util.concurrent.ScheduledThreadPoolExecutor) field.get(server);
+        assertTrue(deadlines.getRemoveOnCancelPolicy());
+        long giveUpAt = System.nanoTime() + 2_000_000_000L;
+        while (deadlines.getQueue().size() != 0 && System.nanoTime() < giveUpAt) Thread.sleep(5);
+        assertEquals(0, deadlines.getQueue().size(), "cancelled deadlines leave the queue at once");
+    }
+
+    @Test
+    void acceptsAnyConfiguredTokenAndSwapsThemWithoutRestarting() throws IOException {
+        restart(new MetricsHttpServer("127.0.0.1", 0, "/metrics", List.of("old", "new"),
+                () -> PAYLOAD.getBytes(StandardCharsets.UTF_8), reported::add, stats,
+                MetricsHttpServer.Options.withConnectionsPerAddress(2)));
+        int port = server.port();
+        assertEquals(200, request("GET /metrics HTTP/1.1", "Bearer old").status);
+        assertEquals(200, request("GET /metrics HTTP/1.1", "Bearer new").status);
+        assertEquals(401, request("GET /metrics HTTP/1.1", "Bearer other").status);
+
+        // Rotation: the old token is dropped in place, the listener never closes.
+        server.tokens(List.of("new"));
+        assertEquals(port, server.port());
+        assertEquals(401, request("GET /metrics HTTP/1.1", "Bearer old").status);
+        assertEquals(200, request("GET /metrics HTTP/1.1", "Bearer new").status);
+        server.tokens(List.of());
+        assertEquals(200, request("GET /metrics HTTP/1.1", null).status, "no token means no auth");
+    }
+
+    @Test
+    void connectionsTurnedAwayAreCountedByReason() throws Exception {
+        try (Socket first = new Socket("127.0.0.1", server.port());
+             Socket second = new Socket("127.0.0.1", server.port());
+             Socket third = new Socket("127.0.0.1", server.port())) {
+            first.getOutputStream().write("GET /metr".getBytes(StandardCharsets.US_ASCII));
+            second.getOutputStream().write("GET /metr".getBytes(StandardCharsets.US_ASCII));
+            third.setSoTimeout(2000);
+            assertEquals(-1, third.getInputStream().read());
+        }
+        assertEquals(1, stats.perAddress());
+        assertEquals(0, stats.saturated());
+
+        // With the cap lifted, workers plus queue fill up and the next connection is dropped.
+        restart(server("", () -> PAYLOAD.getBytes(StandardCharsets.UTF_8), 100, 500, DEADLINE_MS));
+        List<Socket> stalled = new ArrayList<>();
+        try {
+            for (int i = 0; i < MetricsHttpServer.MAX_HELD_CONNECTIONS; i++) {
+                Socket socket = new Socket("127.0.0.1", server.port());
+                socket.getOutputStream().write("GET /metr".getBytes(StandardCharsets.US_ASCII));
+                stalled.add(socket);
+            }
+            long giveUpAt = System.nanoTime() + 5_000_000_000L;
+            while (stats.saturated() == 0 && System.nanoTime() < giveUpAt) {
+                try (Socket extra = new Socket("127.0.0.1", server.port())) {
+                    extra.setSoTimeout(200);
+                    try {
+                        extra.getInputStream().read();
+                    } catch (IOException dropped) {
+                        // Either dropped at once or still queued; the counter decides.
+                    }
+                }
+            }
+            assertTrue(stats.saturated() >= 1, "a saturated pool is counted, not silent");
+        } finally {
+            for (Socket socket : stalled) socket.close();
+        }
+    }
+
+    @Test
+    void everyResponseClosesTheConnectionAndMalformedRequestsGet400() throws IOException {
+        assertEquals("close", request("GET /metrics HTTP/1.1", null).header("connection"));
+        assertEquals("close", request("GET /elsewhere HTTP/1.1", null).header("connection"));
+        assertEquals(400, raw("GET\r\nHost: x\r\n\r\n").status, "a request line without a target");
+        assertEquals(400, raw("GET /%zz HTTP/1.1\r\nHost: x\r\n\r\n").status, "a target that is not a URI");
+        assertEquals(200, raw("GET http://127.0.0.1:9101/metrics HTTP/1.1\r\nHost: x\r\n\r\n").status,
+                "the absolute form a proxy sends");
+    }
+
+    @Test
+    void aTokenWithNonAsciiCharactersAuthenticatesWhenSentAsUtf8() throws IOException {
+        restartWithToken("päss-Zürich");
+
+        // Prometheus, curl and every other scraper send the header as UTF-8 bytes.
+        assertEquals(200, raw(("GET /metrics HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer päss-Zürich\r\n\r\n")
+                .getBytes(StandardCharsets.UTF_8)).status);
+        assertEquals(401, raw(("GET /metrics HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer pass-Zurich\r\n\r\n")
+                .getBytes(StandardCharsets.UTF_8)).status);
+    }
+
+    private Response raw(String request) throws IOException {
+        return raw(request.getBytes(StandardCharsets.ISO_8859_1));
+    }
+
+    /** Sends raw bytes and reads whatever comes back; status -1 means the server just closed. */
+    private Response raw(byte[] request) throws IOException {
+        try (Socket socket = new Socket("127.0.0.1", server.port())) {
+            socket.setSoTimeout(10_000);
+            socket.getOutputStream().write(request);
+            socket.getOutputStream().flush();
+            try {
+                return Response.read(socket);
+            } catch (IOException closedWithoutResponse) {
+                return new Response(-1, List.of(), "");
+            }
         }
     }
 

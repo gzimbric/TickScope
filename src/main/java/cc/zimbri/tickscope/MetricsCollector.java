@@ -83,7 +83,8 @@ final class MetricsCollector {
     private volatile HeavyWorldData heavy;
     private WorldScan activeScan;
     private long scanCooldown;
-    private record GeneratedPlayers(long generation, PlayerSample sample) {}
+    /** The accepted Folia player sample together with the batch generation that produced it. */
+    record GeneratedPlayers(long generation, PlayerSample sample) {}
     private final AtomicReference<GeneratedPlayers> foliaPlayers =
             new AtomicReference<>(new GeneratedPlayers(0, PlayerSample.EMPTY));
 
@@ -131,8 +132,17 @@ final class MetricsCollector {
         return monitoredCollect(true, onlinePlayers);
     }
 
+    /**
+     * What can be published before the platform has been asked anything. JVM, process and
+     * event readings need no Bukkit and are real from the start; only the values a region or the
+     * main thread owns are left unknown until the first scheduled collection.
+     */
     Snapshot initialSnapshot() {
-        return Snapshot.empty(serverId, tickScopeVersion, paperVersion, javaVersion, platform);
+        return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion, platform,
+                0d, 0d, Snapshot.Ticks.EMPTY, new double[]{0, 0, 0},
+                0, 0, 0, 0d, 0d, 0,
+                List.of(), List.of(), List.of(), List.of(), List.of(),
+                jvm(), proc(), events.snapshot());
     }
 
     boolean updateFoliaPlayers(long generation, PlayerSample players) {
@@ -152,6 +162,22 @@ final class MetricsCollector {
 
     PlayerSample foliaPlayerSample() {
         return foliaPlayers.get().sample();
+    }
+
+    GeneratedPlayers foliaPlayersState() {
+        return foliaPlayers.get();
+    }
+
+    /**
+     * Starts this collector from a predecessor's accepted sample. Health is deliberately not
+     * touched: the sample is real, but nothing has been collected under this configuration yet.
+     */
+    void carryFoliaPlayers(GeneratedPlayers carried) {
+        GeneratedPlayers current;
+        do {
+            current = foliaPlayers.get();
+            if (current.generation() >= carried.generation()) return;
+        } while (!foliaPlayers.compareAndSet(current, carried));
     }
 
     /** The cached scan results, so a replacement collector can start where this one left off. */
@@ -243,7 +269,11 @@ final class MetricsCollector {
         } while (activeScan != null);
     }
 
-    /** Process at most the configured number of loaded chunks on one Paper tick. */
+    /**
+     * Process at most the configured number of loaded chunks on one Paper tick. The interval is
+     * the idle gap between two scans: the cooldown only counts down while no scan is active, so
+     * the period between two complete samples is the interval plus the scan's own duration.
+     */
     void collectHeavyWorldDataStep(int chunksPerTick, long intervalTicks) {
         if (activeScan == null && scanCooldown-- > 0) return;
         long started = System.nanoTime();
@@ -252,6 +282,10 @@ final class MetricsCollector {
             int remaining = chunksPerTick;
             while (remaining > 0 && activeScan.worldIndex < activeScan.worlds.size()) {
                 WorldEntry entry = activeScan.worlds.get(activeScan.worldIndex);
+                // Each world's chunk list is taken when the scan reaches it, not when the scan
+                // starts: a list captured hundreds of ticks earlier would be stale, and holding
+                // every world's list for the whole scan retains all of them at once.
+                if (entry.chunks == null) entry.chunks = entry.world.getLoadedChunks();
                 if (activeScan.chunkIndex == entry.chunks.length) {
                     activeScan.finishWorld(entry);
                     activeScan.worldIndex++;
@@ -263,7 +297,6 @@ final class MetricsCollector {
                 // A chunk can unload between the initial list and this tick. Never load it
                 // again just for metrics; the next scan will reflect the new world state.
                 if (!chunk.isLoaded()) continue;
-                if (perWorld) entry.tiles += chunk.getTileEntities(false).length;
                 for (Entity entity : chunk.getEntities()) {
                     if (perWorld) entry.entities++;
                     if (byType) {
@@ -299,29 +332,33 @@ final class MetricsCollector {
         private WorldScan() {
             for (World world : Bukkit.getWorlds()) {
                 if (includedWorld(world.getName())) {
-                    worlds.add(new WorldEntry(world.getName(), world.getLoadedChunks()));
+                    worlds.add(new WorldEntry(world));
                 }
             }
         }
 
         private void finishWorld(WorldEntry entry) {
+            // One pass over the world's chunk holders, once per scan. Counting tile entities
+            // chunk by chunk through Chunk.getTileEntities allocated a block and a state wrapper
+            // for every block entity just to take an array length, which in a redstone-heavy
+            // base cost more main-thread time than the single walk it was meant to spread out.
             if (perWorld) totals.add(new Snapshot.WorldTotals(
-                    entry.name, entry.entities, entry.tiles));
+                    entry.name, entry.entities, entry.world.getTileEntityCount()));
             if (byType) entry.types.forEach((type, count) ->
                     types.add(new Snapshot.TypeCount(entry.name, type, count)));
         }
     }
 
     private static final class WorldEntry {
+        private final World world;
         private final String name;
-        private final Chunk[] chunks;
         private final Map<String, Integer> types = new HashMap<>();
+        private Chunk[] chunks;
         private int entities;
-        private int tiles;
 
-        private WorldEntry(String name, Chunk[] chunks) {
-            this.name = name;
-            this.chunks = chunks;
+        private WorldEntry(World world) {
+            this.world = world;
+            this.name = world.getName();
         }
     }
 

@@ -32,6 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class CollectorIntegrationTest {
     private Server previous;
     private List<World> worlds = List.of();
+    private List<org.bukkit.entity.Player> online = List.of();
     private final AtomicBoolean fail = new AtomicBoolean();
 
     @BeforeEach void installServer() throws Exception {
@@ -44,7 +45,7 @@ class CollectorIntegrationTest {
                     case "getWorlds" -> worlds;
                     case "getTickTimes" -> new long[]{1_000_000};
                     case "getTPS" -> new double[]{20, 20, 20};
-                    case "getOnlinePlayers" -> List.of();
+                    case "getOnlinePlayers" -> online;
                     case "getMaxPlayers" -> { if (fail.get()) throw new IllegalStateException("probe"); yield 20; }
                     case "getPluginManager" -> manager;
                     default -> throw new UnsupportedOperationException(m.getName());
@@ -85,6 +86,101 @@ class CollectorIntegrationTest {
         assertTrue(narrowed.heavyWorldData().totals().isEmpty());
         assertTrue(narrowed.heavyWorldData().types().isEmpty());
     }
+    @Test void narrowingOnlyTheAllowlistKeepsCachedTotalsAndDropsCachedTypes() {
+        var cache = new MetricsCollector.HeavyWorldData(List.of(new Snapshot.WorldTotals("world", 8, 2)),
+                List.of(new Snapshot.TypeCount("world", "zombie", 5), new Snapshot.TypeCount("world", "chicken", 3)),
+                .001);
+        var narrowed = collector(true, true, cache, Set.of(), Set.of("chicken"));
+        assertEquals(cache.totals(), narrowed.heavyWorldData().totals(), "totals do not depend on the allowlist");
+        assertEquals(List.of(new Snapshot.TypeCount("world", "chicken", 3)), narrowed.heavyWorldData().types());
+    }
+
+    @Test void aFailingScanIsAbandonedCountedAndRetriedAfterTheInterval() {
+        AtomicInteger listings = new AtomicInteger();
+        AtomicBoolean broken = new AtomicBoolean(true);
+        Chunk chunk = (Chunk) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{Chunk.class}, (p, m, a) -> switch (m.getName()) {
+                    case "isLoaded" -> true;
+                    case "getEntities" -> {
+                        if (broken.get()) throw new IllegalStateException("entity read failed");
+                        yield new Entity[]{entity(EntityType.ZOMBIE)};
+                    }
+                    default -> throw new UnsupportedOperationException(m.getName());
+                });
+        worlds = List.of((World) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{World.class}, (p, m, a) -> switch (m.getName()) {
+                    case "getName" -> "world";
+                    case "getLoadedChunks" -> { listings.incrementAndGet(); yield new Chunk[]{chunk}; }
+                    case "getTileEntityCount" -> 1;
+                    default -> throw new UnsupportedOperationException(m.getName());
+                }));
+        var c = collector(true, true, null, Set.of(), Set.of());
+        assertThrows(IllegalStateException.class, () -> c.collectHeavyWorldDataStep(32, 3));
+        assertEquals(1, c.health().snapshot().get("world").failures());
+        assertEquals(1, listings.get());
+        // The failed scan is dropped, and the interval is waited out before the next attempt.
+        broken.set(false);
+        for (int i = 0; i < 3; i++) {
+            c.collectHeavyWorldDataStep(32, 3);
+            assertEquals(1, listings.get(), "cooldown tick " + i);
+        }
+        c.collectHeavyWorldDataStep(32, 3);
+        assertEquals(2, listings.get(), "a fresh scan starts from a fresh chunk list");
+        assertEquals(List.of(new Snapshot.WorldTotals("world", 1, 1)), c.heavyWorldData().totals());
+        assertTrue(c.health().snapshot().get("world").lastSuccess() > 0);
+    }
+
+    @Test void theScanIntervalIsTheIdleGapBetweenScans() {
+        AtomicInteger listings = new AtomicInteger();
+        Chunk chunk = (Chunk) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{Chunk.class}, (p, m, a) -> switch (m.getName()) {
+                    case "isLoaded" -> true;
+                    case "getEntities" -> new Entity[0];
+                    default -> throw new UnsupportedOperationException(m.getName());
+                });
+        worlds = List.of((World) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{World.class}, (p, m, a) -> switch (m.getName()) {
+                    case "getName" -> "world";
+                    case "getLoadedChunks" -> { listings.incrementAndGet(); yield new Chunk[]{chunk, chunk}; }
+                    case "getTileEntityCount" -> 0;
+                    default -> throw new UnsupportedOperationException(m.getName());
+                }));
+        var c = collector(true, false, null, Set.of(), Set.of());
+        c.collectHeavyWorldDataStep(1, 10);     // tick 1: first chunk
+        c.collectHeavyWorldDataStep(1, 10);     // tick 2: second chunk
+        c.collectHeavyWorldDataStep(1, 10);     // tick 3: finishes the world, publishes
+        assertEquals(1, c.heavyWorldData().totals().size());
+        for (int tick = 0; tick < 10; tick++) {
+            c.collectHeavyWorldDataStep(1, 10);
+            assertEquals(1, listings.get(), "idle tick " + tick);
+        }
+        c.collectHeavyWorldDataStep(1, 10);
+        assertEquals(2, listings.get(), "the next scan starts after exactly interval idle ticks");
+    }
+
+    @Test void paperPingIsAveragedAndNegativeReadingsAreClamped() {
+        online = List.of(player(30), player(-5), player(45));
+        var sample = collector(false, false, null, Set.of(), Set.of()).collectPaper();
+        assertEquals(3, sample.playersOnline());
+        assertEquals(3, sample.pingSamples());
+        assertEquals(0.025, sample.pingAverageSeconds(), 1e-12);
+        assertEquals(0.045, sample.pingMaximumSeconds(), 1e-12);
+    }
+
+    @Test void placeholderSnapshotCarriesRealJvmProcessAndEventReadings() {
+        var events = new EventCounters();
+        events.recordLogin(org.bukkit.event.player.AsyncPlayerPreLoginEvent.Result.ALLOWED);
+        var c = new MetricsCollector("test", true, true, events, "test", "test", "17", "folia", null,
+                Set.of(), Set.of());
+        Snapshot placeholder = c.initialSnapshot();
+        assertEquals(0, placeholder.playersMax(), "values a region owns stay unknown");
+        assertTrue(placeholder.jvm().heapUsed() > 0);
+        assertTrue(placeholder.proc().uptimeSeconds() > 0);
+        assertEquals(1L, placeholder.events().get("login"));
+        String rendered = PrometheusWriter.render(placeholder, c.health());
+        assertFalse(rendered.contains("mc_uptime_seconds{server=\"test\"} 0\n"));
+        assertFalse(rendered.contains("mc_jvm_memory_used_bytes{server=\"test\",area=\"heap\"} 0\n"));
+    }
     @Test void failureIsVisibleWithoutPublishingANewSnapshotAndRecoveryWorks() {
         var c = collector(false, false, null, Set.of(), Set.of());
         var good = c.collectPaper();
@@ -119,6 +215,7 @@ class CollectorIntegrationTest {
                     case "getName" -> "world";
                     case "getLoadedChunks" -> chunks;
                     case "getChunkCount" -> chunks.length;
+                    case "getTileEntityCount" -> 3;
                     case "getPlayerCount" -> 0;
                     default -> throw new UnsupportedOperationException(m.getName());
                 }));
@@ -140,6 +237,13 @@ class CollectorIntegrationTest {
         return (Entity) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[]{Entity.class},
                 (p, m, a) -> type);
     }
+    private org.bukkit.entity.Player player(int ping) {
+        return (org.bukkit.entity.Player) Proxy.newProxyInstance(getClass().getClassLoader(),
+                new Class<?>[]{org.bukkit.entity.Player.class}, (p, m, a) -> switch (m.getName()) {
+                    case "getPing" -> ping;
+                    default -> throw new UnsupportedOperationException(m.getName());
+                });
+    }
     private World world(String name, boolean excluded, List<Entity> entities) {
         Chunk chunk = (Chunk) Proxy.newProxyInstance(getClass().getClassLoader(),
                 new Class<?>[]{Chunk.class}, (p, m, a) -> switch (m.getName()) {
@@ -153,6 +257,7 @@ class CollectorIntegrationTest {
             if (excluded) throw new AssertionError("Excluded world was read: " + m.getName());
             return switch (m.getName()) {
                 case "getChunkCount" -> 10;
+                case "getTileEntityCount" -> 3;
                 case "getPlayerCount" -> 0;
                 case "getLoadedChunks" -> new Chunk[]{chunk};
                 default -> throw new UnsupportedOperationException(m.getName());

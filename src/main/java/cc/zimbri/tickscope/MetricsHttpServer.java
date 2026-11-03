@@ -18,6 +18,7 @@
 package cc.zimbri.tickscope;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -28,16 +29,21 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -54,10 +60,10 @@ import java.util.function.Supplier;
  * clients silenced the endpoint completely, and a scraper only saw timeouts.
  *
  * <p>Owning the socket makes the deadline ours. Every connection gets a read timeout and a hard
- * overall deadline enforced by a watchdog, so a stalled client is disconnected rather than
- * parked on a worker, and the endpoint keeps serving. Enforcing this needed no dependency: the
- * exposition format is already written by hand, and so now is the handful of response headers
- * that carry it.
+ * overall deadline enforced by a watchdog from the moment it is accepted, so a stalled client is
+ * disconnected rather than parked on a worker or left waiting in the queue, and the endpoint
+ * keeps serving. Enforcing this needed no dependency: the exposition format is already written
+ * by hand, and so now is the handful of response headers that carry it.
  */
 final class MetricsHttpServer implements AutoCloseable {
 
@@ -70,41 +76,75 @@ final class MetricsHttpServer implements AutoCloseable {
     private static final long EXCHANGE_DEADLINE_MS = 15_000L;
     private static final int MAX_LINE_BYTES = 8_192;
     private static final int MAX_HEADER_LINES = 64;
+    /** RFC 9112 asks servers to tolerate an empty line ahead of the request line. */
+    private static final int MAX_LEADING_BLANK_LINES = 2;
     /** Small on purpose: rendering is cheap and a scrape should never need concurrency. */
     private static final int WORKER_THREADS = 4;
     /*
      * Shallow on purpose. Workers plus queue bound how many stalled clients the server will
      * hold at once; beyond that, connections are closed immediately rather than queued ahead
      * of a real scrape. This is bounded degradation, not immunity: a burst of stalled clients
-     * can still delay a scrape by up to the read timeout. What it guarantees is that the delay
-     * is bounded and self-healing, where previously one client silenced the endpoint outright.
+     * can still delay a scrape by up to the exchange deadline, because a client that keeps
+     * trickling bytes resets the read timeout and only the watchdog ends it. What it guarantees
+     * is that the delay is bounded and self-healing, where previously one client silenced the
+     * endpoint outright.
      */
     private static final int QUEUE_DEPTH = 8;
     /** Leave worker capacity for other scrapers when one address opens slow requests. */
-    private static final int MAX_CONNECTIONS_PER_ADDRESS = 2;
+    static final int DEFAULT_CONNECTIONS_PER_ADDRESS = 2;
+    /** Workers plus queue: the most connections the server holds at once, from anywhere. */
+    static final int MAX_HELD_CONNECTIONS = WORKER_THREADS + QUEUE_DEPTH;
+    /** A renderer that keeps failing is reported once a minute, not once per scrape. */
+    private static final long FAILURE_REPORT_INTERVAL_NANOS = 60_000_000_000L;
+
+    /** Tunables that are constants in production and shortened by tests. */
+    record Options(int maxConnectionsPerAddress, int readTimeoutMs, long exchangeDeadlineMs) {
+        static Options withConnectionsPerAddress(int maxConnectionsPerAddress) {
+            return new Options(maxConnectionsPerAddress, READ_TIMEOUT_MS, EXCHANGE_DEADLINE_MS);
+        }
+    }
 
     private final ServerSocket listener;
     private final ThreadPoolExecutor workers;
-    private final ScheduledExecutorService deadlines;
+    private final ScheduledThreadPoolExecutor deadlines;
     private final Thread acceptor;
     private final String path;
-    private final String token;
     private final Supplier<byte[]> body;
+    private final Consumer<Throwable> failures;
+    private final ScrapeStats stats;
     private final int maxConnectionsPerAddress;
+    private final int readTimeoutMs;
+    private final long exchangeDeadlineMs;
     private volatile boolean running = true;
-    private final Set<Socket> connections = new HashSet<>();
+    /** Immutable and replaced whole, so a reload on a command thread is safe for the workers. */
+    private volatile List<byte[]> tokens;
+    /** Every accepted socket with the watchdog task that will close it, queued or served. */
+    private final Map<Socket, ScheduledFuture<?>> connections = new HashMap<>();
+    private final AtomicReference<Long> lastFailureReport = new AtomicReference<>();
 
-    MetricsHttpServer(String bindAddress, int port, String path, String token,
-                      Supplier<byte[]> body) throws IOException {
-        this(bindAddress, port, path, token, body, MAX_CONNECTIONS_PER_ADDRESS);
+    /** Thrown while reading a request whose line is longer than the server will buffer. */
+    private static final class RequestTooLarge extends RuntimeException {
+        private final int status;
+        private final String reason;
+
+        private RequestTooLarge(int status, String reason) {
+            super(reason, null, false, false);
+            this.status = status;
+            this.reason = reason;
+        }
     }
 
-    MetricsHttpServer(String bindAddress, int port, String path, String token,
-                      Supplier<byte[]> body, int maxConnectionsPerAddress) throws IOException {
+    MetricsHttpServer(String bindAddress, int port, String path, Collection<String> tokens,
+                      Supplier<byte[]> body, Consumer<Throwable> failures, ScrapeStats stats,
+                      Options options) throws IOException {
         this.path = path;
-        this.token = token;
         this.body = body;
-        this.maxConnectionsPerAddress = maxConnectionsPerAddress;
+        this.failures = failures;
+        this.stats = stats;
+        this.maxConnectionsPerAddress = options.maxConnectionsPerAddress();
+        this.readTimeoutMs = options.readTimeoutMs();
+        this.exchangeDeadlineMs = options.exchangeDeadlineMs();
+        tokens(tokens);
 
         ServerSocket candidate = new ServerSocket();
         try {
@@ -119,8 +159,11 @@ final class MetricsHttpServer implements AutoCloseable {
         this.workers = new ThreadPoolExecutor(WORKER_THREADS, WORKER_THREADS, 0L,
                 TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(QUEUE_DEPTH),
                 daemonThreads("TickScope-http"), new ThreadPoolExecutor.AbortPolicy());
-        this.deadlines = Executors.newSingleThreadScheduledExecutor(
-                daemonThreads("TickScope-http-deadline"));
+        // Constructed directly rather than through Executors so the cancelled watchdog task of
+        // every completed scrape leaves the queue at once instead of lingering, with its closed
+        // socket, until its deadline would have fired.
+        this.deadlines = new ScheduledThreadPoolExecutor(1, daemonThreads("TickScope-http-deadline"));
+        this.deadlines.setRemoveOnCancelPolicy(true);
         this.acceptor = new Thread(this::acceptLoop, "TickScope-http-accept");
         this.acceptor.setDaemon(true);
     }
@@ -134,22 +177,39 @@ final class MetricsHttpServer implements AutoCloseable {
         return listener.getLocalPort();
     }
 
+    /**
+     * Replaces the accepted tokens without touching the listener, so a rotation never closes a
+     * scrape in flight. An empty collection disables authentication.
+     */
+    void tokens(Collection<String> accepted) {
+        List<byte[]> encoded = new ArrayList<>(accepted.size());
+        for (String token : accepted) encoded.add(token.getBytes(StandardCharsets.UTF_8));
+        this.tokens = List.copyOf(encoded);
+    }
+
     @Override
     public void close() {
         synchronized (connections) {
             running = false;
             closeQuietly(listener);   // unblocks accept()
-            for (Socket connection : connections) closeQuietly(connection);
+            for (Socket connection : connections.keySet()) closeQuietly(connection);
             connections.clear();
         }
         workers.shutdownNow();
         deadlines.shutdownNow();
     }
 
+    /** Convenience for one configured token, or none when it is empty. */
+    static boolean authorised(String token, String header) {
+        return authorised(token.isEmpty() ? List.of() : List.of(token.getBytes(StandardCharsets.UTF_8)),
+                header);
+    }
+
     /**
      * Constant-time bearer check. String.equals returns as soon as two bytes differ, which hands
      * the token back a byte at a time to anyone who can time the response; MessageDigest.isEqual
-     * compares the whole array regardless. An empty configured token disables auth entirely.
+     * compares the whole array regardless. Every accepted token is compared, with no early exit,
+     * so the number of tokens is not observable either. No configured token disables auth.
      *
      * <p>The scheme is matched case-insensitively because RFC 9110 defines it that way, and a
      * scrape configured with a lowercase {@code bearer} type otherwise failed in a way that
@@ -159,15 +219,16 @@ final class MetricsHttpServer implements AutoCloseable {
      * and the token crosses the wire in the clear, so put a TLS-terminating proxy in front of it
      * if the scrape path is not one you control.
      */
-    static boolean authorised(String token, String header) {
-        if (token.isEmpty()) return true;
+    static boolean authorised(List<byte[]> tokens, String header) {
+        if (tokens.isEmpty()) return true;
         if (header == null || header.length() < BEARER.length()
                 || !header.regionMatches(true, 0, BEARER, 0, BEARER.length())) {
             return false;
         }
-        return MessageDigest.isEqual(
-                header.substring(BEARER.length()).trim().getBytes(StandardCharsets.UTF_8),
-                token.getBytes(StandardCharsets.UTF_8));
+        byte[] presented = header.substring(BEARER.length()).trim().getBytes(StandardCharsets.UTF_8);
+        boolean accepted = false;
+        for (byte[] token : tokens) accepted |= MessageDigest.isEqual(presented, token);
+        return accepted;
     }
 
     private void acceptLoop() {
@@ -187,42 +248,67 @@ final class MetricsHttpServer implements AutoCloseable {
                     closeQuietly(connection);
                     return;
                 }
-                long sameAddress = connections.stream()
+                long sameAddress = connections.keySet().stream()
                         .filter(open -> open.getInetAddress().equals(connection.getInetAddress()))
                         .count();
                 if (sameAddress >= maxConnectionsPerAddress) {
+                    stats.rejectedPerAddress();
                     closeQuietly(connection);
                     continue;
                 }
-                connections.add(connection);
+                // The deadline starts here, not when a worker gets to the connection: a socket
+                // waiting in the queue behind stalled ones would otherwise have no deadline at
+                // all until it was dequeued.
+                ScheduledFuture<?> deadline;
+                try {
+                    deadline = deadlines.schedule(() -> closeQuietly(connection),
+                            exchangeDeadlineMs, TimeUnit.MILLISECONDS);
+                } catch (RejectedExecutionException closing) {
+                    closeQuietly(connection);
+                    return;
+                }
+                connections.put(connection, deadline);
             }
             try {
-                connection.setSoTimeout(READ_TIMEOUT_MS);
+                connection.setSoTimeout(readTimeoutMs);
                 connection.setTcpNoDelay(true);
                 workers.execute(() -> serve(connection));
+            } catch (RejectedExecutionException saturated) {
+                // Workers and queue are all held. Dropping the connection keeps the bound on
+                // how much work stalled clients can force the server to hold open.
+                stats.rejectedSaturated();
+                release(connection);
             } catch (IOException | RuntimeException e) {
-                // RejectedExecutionException lands here too: the pool is saturated.
-                // Saturated or unusable. Dropping the connection keeps the bound on how much
-                // work one client can force the server to hold open.
                 release(connection);
             }
         }
     }
 
+    /**
+     * Forgets the connection before closing it. A client sees the close first, and one that
+     * reconnects at once must not find its previous socket still counted against the
+     * per-address cap.
+     */
     private void release(Socket connection) {
-        closeQuietly(connection);
+        ScheduledFuture<?> deadline;
         synchronized (connections) {
-            connections.remove(connection);
+            deadline = connections.remove(connection);
         }
+        if (deadline != null) deadline.cancel(false);
+        closeQuietly(connection);
     }
 
     private void serve(Socket connection) {
-        ScheduledFuture<?> deadline = null;
         try {
-            deadline = deadlines.schedule(
-                    () -> closeQuietly(connection), EXCHANGE_DEADLINE_MS, TimeUnit.MILLISECONDS);
             InputStream in = new BufferedInputStream(connection.getInputStream(), 4096);
-            String requestLine = readLine(in);
+            String requestLine = readLine(in, 414, "URI Too Long");
+            for (int blank = 0; requestLine != null && requestLine.isEmpty(); blank++) {
+                if (blank == MAX_LEADING_BLANK_LINES) {
+                    respond(connection, 400, "Bad Request", null, null, 0);
+                    return;
+                }
+                requestLine = readLine(in, 414, "URI Too Long");
+            }
             if (requestLine == null) return;
 
             String[] parts = requestLine.split(" ");
@@ -234,7 +320,8 @@ final class MetricsHttpServer implements AutoCloseable {
             String authorization = null;
             int seen = 0;
             String line;
-            while ((line = readLine(in)) != null && !line.isEmpty()) {
+            while ((line = readLine(in, 431, "Request Header Fields Too Large")) != null
+                    && !line.isEmpty()) {
                 if (++seen > MAX_HEADER_LINES) {
                     respond(connection, 431, "Request Header Fields Too Large", null, null, 0);
                     return;
@@ -245,16 +332,28 @@ final class MetricsHttpServer implements AutoCloseable {
                 }
             }
             handle(connection, parts[0], parts[1], authorization);
+        } catch (RequestTooLarge e) {
+            // The limit is deliberate, so say so instead of closing in silence.
+            try {
+                respond(connection, e.status, e.reason, null, null, 0);
+            } catch (IOException | RuntimeException gone) {
+                // The client left before hearing why.
+            }
         } catch (IOException | RuntimeException e) {
             // Timed out, disconnected, or malformed. There is no one left to tell.
         } finally {
-            if (deadline != null) deadline.cancel(false);
             release(connection);
         }
     }
 
     private void handle(Socket connection, String method, String target, String authorization)
             throws IOException {
+        // Authentication comes first: a refused scrape learns nothing about the server, not
+        // even whether the path it guessed is the configured one.
+        if (!authorised(tokens, authorization)) {
+            respond(connection, 401, "Unauthorized", null, null, 0, "WWW-Authenticate: Bearer");
+            return;
+        }
         String requestPath;
         try {
             requestPath = new URI(target).getPath();
@@ -271,13 +370,25 @@ final class MetricsHttpServer implements AutoCloseable {
             respond(connection, 405, "Method Not Allowed", null, null, 0, "Allow: GET, HEAD");
             return;
         }
-        if (!authorised(token, authorization)) {
-            // Empty body: a refused scrape learns nothing about the server.
-            respond(connection, 401, "Unauthorized", null, null, 0, "WWW-Authenticate: Bearer");
+        byte[] payload;
+        try {
+            payload = body.get();
+            if (payload == null) throw new IllegalStateException("the renderer returned no body");
+        } catch (RuntimeException e) {
+            // A renderer bug would otherwise look like a dead endpoint: every scrape closed
+            // without a byte, and nothing in the log to say why.
+            report(e);
+            respond(connection, 500, "Internal Server Error", null, null, 0);
             return;
         }
-        byte[] payload = body.get();
         respond(connection, 200, "OK", CONTENT_TYPE, head ? null : payload, payload.length);
+    }
+
+    private void report(Throwable failure) {
+        long now = System.nanoTime();
+        Long last = lastFailureReport.get();
+        if (last != null && now - last < FAILURE_REPORT_INTERVAL_NANOS) return;
+        if (lastFailureReport.compareAndSet(last, now)) failures.accept(failure);
     }
 
     private static void respond(Socket connection, int status, String reason, String contentType,
@@ -304,24 +415,31 @@ final class MetricsHttpServer implements AutoCloseable {
         out.flush();
     }
 
-    /** Reads one CRLF-terminated line, refusing to buffer more than a request line should be. */
-    private static String readLine(InputStream in) throws IOException {
-        StringBuilder line = new StringBuilder(128);
+    /**
+     * Reads one CRLF-terminated line, refusing to buffer more than a request line should be.
+     * The status names which limit was hit, since a request line and a header line are
+     * refused with different codes.
+     */
+    private static String readLine(InputStream in, int tooLongStatus, String tooLongReason)
+            throws IOException {
+        // Decoded as UTF-8, which is what every scraper sends. Widening each byte to a char
+        // instead made a token with any non-ASCII character fail every scrape, in a way that
+        // looked exactly like a mistyped token.
+        ByteArrayOutputStream line = new ByteArrayOutputStream(128);
         int c;
         while ((c = in.read()) != -1) {
             if (c == '\n') {
-                int end = line.length();
-                if (end > 0 && line.charAt(end - 1) == '\r') {
-                    line.setLength(end - 1);
-                }
-                return line.toString();
+                byte[] bytes = line.toByteArray();
+                int end = bytes.length;
+                if (end > 0 && bytes[end - 1] == '\r') end--;
+                return new String(bytes, 0, end, StandardCharsets.UTF_8);
             }
-            if (line.length() >= MAX_LINE_BYTES) {
-                throw new IOException("request line exceeds " + MAX_LINE_BYTES + " bytes");
+            if (line.size() >= MAX_LINE_BYTES) {
+                throw new RequestTooLarge(tooLongStatus, tooLongReason);
             }
-            line.append((char) c);
+            line.write(c);
         }
-        return line.length() == 0 ? null : line.toString();
+        return line.size() == 0 ? null : line.toString(StandardCharsets.UTF_8);
     }
 
     private static ThreadFactory daemonThreads(String name) {

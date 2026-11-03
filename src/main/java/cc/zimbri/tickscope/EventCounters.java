@@ -34,8 +34,10 @@ import java.util.concurrent.atomic.LongAdder;
  * Monotonic event counters, the one thing UnifiedMetrics exposes that cannot be sampled —
  * a gauge read every 5s would miss joins between reads.
  *
- * <p>Listeners are MONITOR/ignoreCancelled so counting never influences gameplay, and
- * LongAdder keeps the async chat handler off a contended lock.
+ * <p>Listeners run at MONITOR priority, so they observe the outcome of every other plugin
+ * without changing it, and LongAdder keeps the async chat handler off a contended lock.
+ * Whether a cancelled event counts is decided per event below: ignoreCancelled filters what
+ * is counted, nothing more.
  */
 final class EventCounters implements Listener {
 
@@ -73,7 +75,12 @@ final class EventCounters implements Listener {
 
     // Paper's Adventure chat event, not the deprecated Bukkit AsyncPlayerChatEvent —
     // that one is not guaranteed to fire on a modern chat pipeline.
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    //
+    // Cancelled chat is counted on purpose. Most chat-formatting plugins cancel the event and
+    // deliver the message themselves, and Paper carries a cancelled legacy event over into
+    // this one, so skipping cancelled events left the counter at zero on exactly the servers
+    // where players talk the most. The series therefore counts messages players sent.
+    @EventHandler(priority = EventPriority.MONITOR)
     public void onChat(AsyncChatEvent e) { bump("chat"); }
 
     // EntityDeathEvent is cancellable, so a plugin that revives the player cancels it before

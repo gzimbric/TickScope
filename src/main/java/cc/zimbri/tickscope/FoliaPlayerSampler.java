@@ -104,14 +104,26 @@ final class FoliaPlayerSampler {
         if (method == null) return null;
         try {
             return (double[]) method.invoke(player.getServer(), location);
-        } catch (IllegalAccessException | InvocationTargetException e) {
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            // An implementation that refuses the call loses the optional regional series for
+            // this sample only; it must not take the ping sample and the batch down with it.
             return null;
         }
     }
 
     private static Method findRegionMethod(String name) {
+        return regionMethod(Server.class, name);
+    }
+
+    /**
+     * Only a method with the shape this sampler was written against is used. A fork that
+     * declares the name with another return type would otherwise fail the cast on every
+     * player's region thread, and the failure would surface as missing ping samples.
+     */
+    static Method regionMethod(Class<?> server, String name) {
         try {
-            return Server.class.getMethod(name, Location.class);
+            Method method = server.getMethod(name, Location.class);
+            return method.getReturnType() == double[].class ? method : null;
         } catch (NoSuchMethodException e) {
             return null;
         }

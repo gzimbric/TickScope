@@ -144,6 +144,20 @@ class FoliaPlayerSamplerTest {
         sampler.close();
     }
 
+    /** A server type with the regional methods in various shapes. */
+    interface RegionalServer {
+        double[] getRegionTPS(Location location);
+        long[] getRegionAverageTickTimes(Location location);
+    }
+
+    @Test
+    void usesOnlyRegionalMethodsWithTheExpectedShape() {
+        assertNotNull(FoliaPlayerSampler.regionMethod(RegionalServer.class, "getRegionTPS"));
+        assertNull(FoliaPlayerSampler.regionMethod(RegionalServer.class, "getRegionAverageTickTimes"),
+                "a different return type would fail the cast on every player's region thread");
+        assertNull(FoliaPlayerSampler.regionMethod(RegionalServer.class, "getRegionMspt"));
+    }
+
     private static Player player(int ping) {
         return (Player) Proxy.newProxyInstance(
                 Player.class.getClassLoader(),

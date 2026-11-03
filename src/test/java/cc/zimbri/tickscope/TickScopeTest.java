@@ -54,6 +54,29 @@ class TickScopeTest {
         assertEquals(sample, collector.foliaPlayerSample());
     }
     @Test
+    void carriesAPredecessorsSampleWithoutTouchingHealth() {
+        MetricsCollector previous = new MetricsCollector("test", false, false,
+                new EventCounters(), "test", "test", "17", "folia", null);
+        var sample = new MetricsCollector.PlayerSample(2, 0.04, 0.05, 2,
+                java.util.List.of(), java.util.List.of());
+        assertTrue(previous.updateFoliaPlayers(6, sample));
+
+        MetricsCollector replacement = new MetricsCollector("test", false, false,
+                new EventCounters(), "test", "test", "17", "folia", null);
+        replacement.carryFoliaPlayers(previous.foliaPlayersState());
+        assertEquals(sample, replacement.foliaPlayerSample());
+        assertEquals(0d, replacement.health().snapshot().get("players").lastSuccess(),
+                "nothing has been collected under the new configuration yet");
+        // Generations keep increasing through the plugin, so a callback from a batch started
+        // before the reload is still rejected and the next batch is still accepted.
+        assertFalse(replacement.updateFoliaPlayers(6, MetricsCollector.PlayerSample.EMPTY));
+        assertTrue(replacement.updateFoliaPlayers(7, MetricsCollector.PlayerSample.EMPTY));
+        replacement.carryFoliaPlayers(previous.foliaPlayersState());
+        assertEquals(MetricsCollector.PlayerSample.EMPTY, replacement.foliaPlayerSample(),
+                "carrying never moves backwards");
+    }
+
+    @Test
     void concurrentFoliaUpdatesKeepTheNewestSampleAndCoverage() throws Exception {
         var collector = new MetricsCollector("test", false, false, new EventCounters(),
                 "test", "test", "17", "folia", null);

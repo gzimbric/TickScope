@@ -30,6 +30,22 @@ class CollectionHealthTest {
         assertFalse(health.snapshot().get("world").enabled());
     }
 
+    /** The rendered-body cache is keyed on this number, so every visible change must move it. */
+    @Test void everyStateChangeAdvancesTheRevisionAndReadingDoesNot() {
+        var health = new CollectionHealth(true, true);
+        long start = health.revision();
+        health.snapshot();
+        assertEquals(start, health.revision());
+        health.success("main");
+        assertEquals(start + 1, health.revision());
+        health.failure("world");
+        assertEquals(start + 2, health.revision());
+        health.players(0, 0);
+        assertEquals(start + 3, health.revision());
+        assertEquals(java.util.List.of("main", "world", "players"),
+                new java.util.ArrayList<>(health.snapshot().keySet()), "stages keep their declared order");
+    }
+
     @Test void rendersEnabledStagesAndCoverageWithoutBukkitReads() {
         var health = new CollectionHealth(false, true);
         health.players(1, 3);

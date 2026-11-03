@@ -9,6 +9,7 @@
  */
 package cc.zimbri.tickscope;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -51,10 +52,11 @@ final class CollectionHealth {
         revision.incrementAndGet();
     }
 
+    /** Stages come back in their declared order, so the exposition is stable scrape to scrape. */
     Map<String, Reading> snapshot() {
         Map<String, Reading> copy = new LinkedHashMap<>();
         stages.forEach((name, reading) -> copy.put(name, reading.get()));
-        return Map.copyOf(copy);
+        return Collections.unmodifiableMap(copy);
     }
 
     private static double now() { return System.currentTimeMillis() / 1000d; }

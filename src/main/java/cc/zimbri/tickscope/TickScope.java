@@ -26,6 +26,7 @@ import java.io.File;
 import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -56,9 +57,12 @@ public final class TickScope extends JavaPlugin {
     private PlatformScheduler.TaskHandle sampler;
     private PlatformScheduler.TaskHandle scanSampler;
     private FoliaPlayerSampler foliaPlayers;
+    // Process-lifetime state: created once, so counters survive reloads and re-enables.
     private EventCounters events;
+    private ScrapeStats scrapeStats;
     private final AtomicLong foliaPlayerSampleGeneration = new AtomicLong();
     private final ReentrantLock runtimeLock = new ReentrantLock();
+    private final Object renderLock = new Object();
     private volatile MetricsCollector collector;
     private volatile Snapshot latest;
     private volatile RenderedMetrics rendered;
@@ -66,29 +70,43 @@ public final class TickScope extends JavaPlugin {
     private boolean stopped;
 
     private record RenderedMetrics(Snapshot snapshot, MetricsCollector collector,
-                                   long healthRevision, byte[] bytes) {}
+                                   long healthRevision, long rejectedConnections, byte[] bytes) {}
 
-    record Settings(String serverId, String bind, int port, String path, String token,
+    record Settings(String serverId, String bind, int port, String path, List<String> tokens,
                             long interval, boolean perWorld, boolean byType, long scanInterval,
                             int scanChunksPerTick,
-                            Set<String> excludedWorlds, Set<String> allowedTypes) {
+                            Set<String> excludedWorlds, Set<String> allowedTypes,
+                            int maxConnectionsPerAddress) {
+        /**
+         * Everything the listener is built from; a change to any of it means a restart. Tokens
+         * are deliberately not part of it: they are swapped in place so a rotation never closes
+         * a scrape in flight.
+         */
         boolean sameEndpoint(Settings other) {
             return other != null && bind.equals(other.bind) && port == other.port
-                    && path.equals(other.path) && token.equals(other.token);
+                    && path.equals(other.path)
+                    && maxConnectionsPerAddress == other.maxConnectionsPerAddress;
         }
     }
 
-    private enum ReloadResult { RELOADED, REJECTED, ROLLED_BACK, DISABLED }
+    private enum ReloadResult { RELOADED, ROLLED_BACK, DISABLED }
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        events = new EventCounters();
-        getServer().getPluginManager().registerEvents(events, this);
-
         runtimeLock.lock();
         try {
+            // onDisable left these behind. Without clearing them a re-enabled plugin would run
+            // its Folia collection task against a closed sampler and a set stop flag forever.
+            stopped = false;
+            foliaPlayers = null;
             scheduler = PlatformScheduler.create(this);
+            // A plugin manager can disable and enable this same instance without restarting
+            // the server, and Bukkit unregisters listeners on disable. The counters are kept so
+            // their series stay monotonic across that; only the registration is repeated.
+            if (events == null) events = new EventCounters();
+            if (scrapeStats == null) scrapeStats = new ScrapeStats();
+            getServer().getPluginManager().registerEvents(events, this);
             Settings settings = readSettings();
             configureCollector(settings);
             startHttp(settings);
@@ -96,6 +114,12 @@ public final class TickScope extends JavaPlugin {
             logServing(settings);
         } catch (IllegalArgumentException | IOException | InvalidConfigurationException e) {
             getLogger().severe("Could not start TickScope — " + e.getMessage());
+            getServer().getPluginManager().disablePlugin(this);
+        } catch (RuntimeException e) {
+            // Paper disables a plugin whose onEnable throws, but the stack trace it prints does
+            // not say which plugin state was reached. Disabling here keeps the message and the
+            // cleanup in one place.
+            getLogger().log(Level.SEVERE, "Could not start TickScope", e);
             getServer().getPluginManager().disablePlugin(this);
         } finally {
             runtimeLock.unlock();
@@ -107,14 +131,33 @@ public final class TickScope extends JavaPlugin {
         runtimeLock.lock();
         try {
             stopped = true;
-            if (sampler != null) sampler.cancel();
-            if (scanSampler != null) scanSampler.cancel();
-            sampler = null;
-            scanSampler = null;
-            if (foliaPlayers != null) foliaPlayers.close();
+            // Each step is isolated: a scheduler that refuses to cancel a task must not leave
+            // the listener bound to the port until the JVM exits.
+            try {
+                cancelSamplers();
+            } catch (RuntimeException e) {
+                getLogger().warning("Could not cancel a collection task: " + e.getMessage());
+            }
+            try {
+                if (foliaPlayers != null) foliaPlayers.close();
+            } finally {
+                foliaPlayers = null;
+            }
             stopHttp();
         } finally {
             runtimeLock.unlock();
+        }
+    }
+
+    private void cancelSamplers() {
+        PlatformScheduler.TaskHandle main = sampler;
+        PlatformScheduler.TaskHandle scan = scanSampler;
+        sampler = null;
+        scanSampler = null;
+        try {
+            if (main != null) main.cancel();
+        } finally {
+            if (scan != null) scan.cancel();
         }
     }
 
@@ -125,18 +168,28 @@ public final class TickScope extends JavaPlugin {
             case "status" -> status(sender);
             case "reload" -> {
                 sender.sendMessage("Reloading TickScope…");
+                // The file is read and validated before the lock is taken: a rejected file
+                // changes nothing, and Folia's global-region task, which shares the lock, must
+                // never wait on disk I/O.
+                final Settings next;
+                try {
+                    next = readSettings();
+                } catch (IllegalArgumentException | IOException | InvalidConfigurationException e) {
+                    getLogger().warning("Reload rejected — " + e.getMessage());
+                    sender.sendMessage(
+                            "Reload rejected; the configuration is not valid and the previous one "
+                                    + "is still active. The server log says which setting.");
+                    return true;
+                }
                 ReloadResult result;
                 runtimeLock.lock();
                 try {
-                    result = reloadRuntime();
+                    result = reloadRuntime(next);
                 } finally {
                     runtimeLock.unlock();
                 }
                 switch (result) {
                     case RELOADED -> sender.sendMessage("Reloaded.");
-                    case REJECTED -> sender.sendMessage(
-                            "Reload rejected; the configuration is not valid and the previous one "
-                                    + "is still active. The server log says which setting.");
                     case ROLLED_BACK -> sender.sendMessage(
                             "Could not open the new endpoint; rolled back to the previous one.");
                     case DISABLED -> sender.sendMessage(
@@ -152,15 +205,23 @@ public final class TickScope extends JavaPlugin {
     private void status(CommandSender sender) {
         Snapshot s = latest;
         Settings settings = active;
+        MetricsCollector current = collector;
         sender.sendMessage("TickScope " + getDescription().getVersion());
-        for (Map.Entry<String, String> e : collector.describe().entrySet()) {
+        if (s == null || settings == null || current == null || scheduler == null) {
+            // Startup did not get as far as an endpoint; the log has the reason.
+            sender.sendMessage("  not running: startup failed, see the server log");
+            return;
+        }
+        for (Map.Entry<String, String> e : current.describe().entrySet()) {
             sender.sendMessage("  " + e.getKey() + ": " + e.getValue());
         }
         sender.sendMessage("  endpoint: " + endpointUrl(settings));
         sender.sendMessage("  collection-interval: " + settings.interval + " ticks");
         sender.sendMessage("  world-scan-interval: "
-                + (scheduler.isFolia() ? "disabled on Folia" : settings.scanInterval + " ticks"));
-        for (var entry : collector.health().snapshot().entrySet()) {
+                + (scheduler.isFolia() ? "disabled on Folia"
+                : settings.perWorld || settings.byType ? settings.scanInterval + " ticks"
+                : "disabled"));
+        for (var entry : current.health().snapshot().entrySet()) {
             var health = entry.getValue();
             if (!health.enabled()) continue;
             String age = health.lastSuccess() == 0 ? "not yet collected"
@@ -171,8 +232,10 @@ public final class TickScope extends JavaPlugin {
         }
         sender.sendMessage("  world exclusions: " + settings.excludedWorlds.size()
                 + ", entity allowlist: " + settings.allowedTypes.size());
-        // State only -- never the token itself.
-        sender.sendMessage("  auth: " + (settings.token.isEmpty() ? "none" : "required"));
+        // State only -- never a token itself.
+        sender.sendMessage("  auth: " + (settings.tokens.isEmpty() ? "none"
+                : "required (" + settings.tokens.size() + " accepted token"
+                + (settings.tokens.size() == 1 ? ")" : "s)")));
         if (scheduler.isFolia()) {
             sender.sendMessage("  tick-metrics: regional TPS"
                     + (s.regionTickDurations().isEmpty() ? " (regional MSPT unavailable)"
@@ -213,7 +276,7 @@ public final class TickScope extends JavaPlugin {
 
     static Settings parseSettings(FileConfiguration config, Logger logger) {
         String serverId = required(config, "server-id", "paper");
-        String bind = required(config, "bind-address", "127.0.0.1");
+        String bind = unbracketed(required(config, "bind-address", "127.0.0.1"));
         long configuredPort = integral(config, "port", 9101L);
         int port = checkedPort(configuredPort);
         String path = required(config, "path", "/metrics");
@@ -222,7 +285,14 @@ public final class TickScope extends JavaPlugin {
             throw new IllegalArgumentException(
                     "path must be an absolute path without a trailing '/', query, or fragment");
         }
-        String token = string(config, "auth-token", "");
+        // A request target is parsed as a URI before it is compared with this string, so a
+        // path that cannot come out of that parser is unreachable: "//" starts an authority,
+        // and a literal '%' is decoded away. Better refused now than served as 404 forever.
+        if (path.startsWith("//") || path.indexOf('%') >= 0) {
+            throw new IllegalArgumentException(
+                    "path must not start with '//' or contain '%'");
+        }
+        List<String> tokens = tokens(config);
         long interval = atLeast(logger, "collection-interval-ticks",
                 integral(config, "collection-interval-ticks", 100L), 20L);
         boolean perWorld = bool(config, "per-world", true);
@@ -233,26 +303,96 @@ public final class TickScope extends JavaPlugin {
         if (scanChunks < 1 || scanChunks > 1000) {
             throw new IllegalArgumentException("entity-types.chunks-per-tick must be between 1 and 1000");
         }
-        return new Settings(serverId, bind, port, path, token, interval,
+        long connections = integral(config, "max-connections-per-address",
+                (long) MetricsHttpServer.DEFAULT_CONNECTIONS_PER_ADDRESS);
+        if (connections < 1 || connections > MetricsHttpServer.MAX_HELD_CONNECTIONS) {
+            throw new IllegalArgumentException("max-connections-per-address must be between 1 and "
+                    + MetricsHttpServer.MAX_HELD_CONNECTIONS);
+        }
+        return new Settings(serverId, bind, port, path, tokens, interval,
                 perWorld, byType, scanInterval, (int) scanChunks,
                 stringSet(config, "exclude-worlds"),
-                stringSet(config, "entity-types.allowlist"));
+                registryKeys(config, "entity-types.allowlist"),
+                (int) connections);
+    }
+
+    /** The most tokens accepted at once; rotation needs two, anything more is a mistake. */
+    static final int MAX_TOKENS = 8;
+
+    /**
+     * {@code auth-token} and {@code auth-tokens} together, in that order, so one token keeps
+     * working as before and a rotation adds the next one beside it.
+     */
+    private static List<String> tokens(FileConfiguration config) {
+        String single = string(config, "auth-token", "");
+        if (single.isEmpty() && config.get("auth-token") instanceof String raw && !raw.isEmpty()) {
+            // Whitespace is trimmed, so a token of only spaces would have disabled
+            // authentication without anyone meaning it to.
+            throw new IllegalArgumentException(
+                    "auth-token must not be blank; leave it empty to disable authentication");
+        }
+        Set<String> tokens = new LinkedHashSet<>();
+        if (!single.isEmpty()) tokens.add(single);
+        tokens.addAll(stringList(config, "auth-tokens"));
+        if (tokens.size() > MAX_TOKENS) {
+            throw new IllegalArgumentException("at most " + MAX_TOKENS + " tokens may be accepted at once");
+        }
+        return List.copyOf(tokens);
     }
 
     private static Set<String> stringSet(FileConfiguration config, String key) {
+        return Set.copyOf(stringList(config, key));
+    }
+
+    /** The configured strings, trimmed, in the order written, without blanks or duplicates. */
+    private static List<String> stringList(FileConfiguration config, String key) {
         Object value = config.get(key);
-        if (value == null) return Set.of();
+        if (value == null) return List.of();
         if (!(value instanceof List<?> list)) {
             throw new IllegalArgumentException(key + " must be a list of strings");
         }
         Set<String> result = new LinkedHashSet<>();
         for (Object item : list) {
-            if (!(item instanceof String text) || text.isBlank()) {
-                throw new IllegalArgumentException(key + " must contain non-empty strings");
+            if (!(item instanceof String text)) {
+                throw new IllegalArgumentException(key + " must contain only strings, but has "
+                        + quoted(item));
+            }
+            if (text.isBlank()) {
+                throw new IllegalArgumentException(key + " must not contain an empty entry");
             }
             result.add(text.trim());
         }
-        return Set.copyOf(result);
+        return List.copyOf(result);
+    }
+
+    /**
+     * Entity types are matched by registry key, which is lowercase and carries no namespace
+     * in the exported label. Operators copy names from logs and commands, where they appear
+     * as {@code minecraft:zombie} or {@code ZOMBIE}, and an entry in that form silently
+     * matched nothing. Normalising here keeps the configuration meaning what it says.
+     */
+    private static Set<String> registryKeys(FileConfiguration config, String key) {
+        Set<String> normalised = new LinkedHashSet<>();
+        for (String entry : stringSet(config, key)) {
+            String name = entry.toLowerCase(Locale.ROOT);
+            int namespace = name.indexOf(':');
+            if (namespace >= 0) name = name.substring(namespace + 1);
+            if (name.isEmpty() || !name.chars().allMatch(c -> c == '_' || c == '/' || c == '.'
+                    || c == '-' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9')) {
+                throw new IllegalArgumentException(key + " entries must be registry names such "
+                        + "as zombie or item_frame, but has " + quoted(entry));
+            }
+            normalised.add(name);
+        }
+        return Set.copyOf(normalised);
+    }
+
+    /** {@code [::1]} is how URLs and Prometheus targets write the address; bind() wants {@code ::1}. */
+    private static String unbracketed(String bind) {
+        if (bind.length() > 2 && bind.startsWith("[") && bind.endsWith("]")) {
+            return bind.substring(1, bind.length() - 1);
+        }
+        return bind;
     }
 
     private static String string(FileConfiguration config, String key, String fallback) {
@@ -316,10 +456,7 @@ public final class TickScope extends JavaPlugin {
     }
 
     private void configureCollector(Settings settings) {
-        if (sampler != null) sampler.cancel();
-        if (scanSampler != null) scanSampler.cancel();
-        sampler = null;
-        scanSampler = null;
+        cancelSamplers();
 
         String pluginVersion = getDescription().getVersion();
         String paperVersion = getServer().getVersion();
@@ -332,11 +469,20 @@ public final class TickScope extends JavaPlugin {
                 scheduler.isFolia() ? "folia" : "paper",
                 previous == null ? null : previous.heavyWorldData(),
                 settings.excludedWorlds, settings.allowedTypes);
+        // The player batch in flight during a reload completes into the collector it started
+        // under, so without this the replacement would publish no ping or regional series until
+        // its own first batch lands, one interval later.
+        if (previous != null) collector.carryFoliaPlayers(previous.foliaPlayersState());
+
+        // A previous snapshot is still true after a reload; only its server label can be
+        // stale. The placeholder is for the first enable, and for Folia, where onEnable and
+        // player commands do not necessarily own world data and the first global-region task
+        // fills it in on the next tick.
+        Snapshot current = latest;
+        boolean keepCurrent = current != null && current.serverId().equals(settings.serverId);
 
         if (scheduler.isFolia()) {
-            // onEnable and player commands do not necessarily own world data on Folia. Publish a
-            // placeholder and let the first global-region task replace it on the next tick.
-            latest = collector.initialSnapshot();
+            if (!keepCurrent) latest = collector.initialSnapshot();
             if (foliaPlayers == null) foliaPlayers = new FoliaPlayerSampler(scheduler);
             sampler = scheduler.repeatGlobal(() -> guarded(this::collectFolia), 1L, settings.interval);
             // The world scan reads chunk and entity data the global region does not own, so it
@@ -346,7 +492,16 @@ public final class TickScope extends JavaPlugin {
                     + "Chunk and player counts are still published.");
         } else {
             // Paper configuration is applied on the main thread, so publish a real sample now.
-            latest = collector.collectPaper();
+            // The sample is guarded like every scheduled one: a failing Bukkit read must not
+            // escape with the tasks cancelled and nothing scheduled to replace them.
+            Snapshot first = null;
+            try {
+                first = collector.collectPaper();
+            } catch (RuntimeException e) {
+                getLogger().warning("Collection failed; retaining the last sample: " + e.getMessage());
+            }
+            if (first != null) latest = first;
+            else if (!keepCurrent) latest = collector.initialSnapshot();
             sampler = scheduler.repeatGlobal(
                     () -> guarded(() -> latest = collector.collectPaper()), settings.interval, settings.interval);
             if (settings.perWorld || settings.byType) {
@@ -382,16 +537,10 @@ public final class TickScope extends JavaPlugin {
         }
     }
 
-    private ReloadResult reloadRuntime() {
-        final Settings next;
-        try {
-            next = readSettings();
-        } catch (IllegalArgumentException | IOException | InvalidConfigurationException e) {
-            getLogger().warning("Reload rejected — " + e.getMessage());
-            return ReloadResult.REJECTED;
-        }
-
-        if (!next.sameEndpoint(active)) {
+    private ReloadResult reloadRuntime(Settings next) {
+        if (next.sameEndpoint(active)) {
+            http.tokens(next.tokens);
+        } else {
             Settings previous = active;
             stopHttp();
             try {
@@ -418,7 +567,10 @@ public final class TickScope extends JavaPlugin {
 
     private void startHttp(Settings settings) throws IOException {
         MetricsHttpServer candidate = new MetricsHttpServer(settings.bind, settings.port,
-                settings.path, settings.token, this::renderMetrics);
+                settings.path, settings.tokens, this::renderMetrics,
+                failure -> getLogger().log(Level.WARNING, "Rendering the metrics body failed", failure),
+                scrapeStats,
+                MetricsHttpServer.Options.withConnectionsPerAddress(settings.maxConnectionsPerAddress));
         try {
             candidate.start();
         } catch (RuntimeException e) {
@@ -428,21 +580,29 @@ public final class TickScope extends JavaPlugin {
         http = candidate;
     }
 
-    /** Share one rendered body across scrapes until collection or health changes. */
+    /**
+     * Share one rendered body across scrapes until collection, health or the endpoint's own
+     * counters change.
+     */
     private byte[] renderMetrics() {
         Snapshot snapshot = latest;
         MetricsCollector current = collector;
         long revision = current.health().revision();
+        long rejected = scrapeStats.total();
         RenderedMetrics cache = rendered;
         if (cache != null && cache.snapshot == snapshot && cache.collector == current
-                && cache.healthRevision == revision) return cache.bytes;
-        synchronized (this) {
+                && cache.healthRevision == revision && cache.rejectedConnections == rejected) {
+            return cache.bytes;
+        }
+        synchronized (renderLock) {
             cache = rendered;
             if (cache != null && cache.snapshot == snapshot && cache.collector == current
-                    && cache.healthRevision == revision) return cache.bytes;
-            byte[] bytes = PrometheusWriter.render(snapshot, current.health())
+                    && cache.healthRevision == revision && cache.rejectedConnections == rejected) {
+                return cache.bytes;
+            }
+            byte[] bytes = PrometheusWriter.render(snapshot, current.health(), scrapeStats)
                     .getBytes(StandardCharsets.UTF_8);
-            rendered = new RenderedMetrics(snapshot, current, revision, bytes);
+            rendered = new RenderedMetrics(snapshot, current, revision, rejected, bytes);
             return bytes;
         }
     }
@@ -459,6 +619,6 @@ public final class TickScope extends JavaPlugin {
                 + settings.port + " as server=\"" + settings.serverId + "\" (every "
                 + settings.interval + " ticks, " + (scheduler.isFolia() ? "Folia" : "Paper")
                 + ", "
-                + (settings.token.isEmpty() ? "no auth)" : "auth required)"));
+                + (settings.tokens.isEmpty() ? "no auth)" : "auth required)"));
     }
 }
