@@ -8,15 +8,15 @@ and alert rules to monitor a single server or a network of backends.
 
 ## Features
 
-- Paper TPS and exact p50, p95, and p99 tick-time percentiles.
+- Paper TPS, exact p50, p95, and p99 tick-time percentiles, and a cumulative tick-time histogram.
 - Folia regional TPS sampled at player locations, plus regional average MSPT where the server API supports it.
-- Player counts and ping, world chunks and players, JVM memory and garbage collection, CPU readings, and player event counters.
+- Player counts and ping, world chunks, players and chunk churn, JVM memory areas and pools, garbage collection, CPU readings, file descriptors, and player event counters.
 - Paper world entity totals, tile-entity totals, and entity-type breakdowns on a slower scan interval.
 - A per-tick chunk budget for Paper world scans, so large worlds are inspected over multiple ticks.
 - Collection freshness and failure metrics, with bounded Folia sampling and partial-coverage counts.
 - A Grafana dashboard with server selectors, plus an optional overview with a row for each server.
-- Eight Prometheus alert rules for exporter availability, stale collection, tick health, heap pressure, and incomplete player coverage.
-- Optional bearer authentication, strict configuration validation, world exclusions, and an entity-type allowlist.
+- Nine Prometheus alert rules for exporter availability, stale collection, tick health, heap pressure, file descriptors, and incomplete player coverage.
+- Optional bearer authentication with token rotation, strict configuration validation, world exclusions, and an entity-type allowlist.
 - Cached metrics responses and a per-address connection limit for the HTTP endpoint.
 - No runtime libraries to install and no outbound telemetry.
 
@@ -26,8 +26,8 @@ Install TickScope on Paper or a compatible server. The project supports Paper/Pu
 and Folia-compatible servers, including Canvas on supported modern releases. The plugin targets
 Java 17; use the Java version required by your Minecraft server, which may be newer.
 
-Minecraft 26.3 is listed for compatibility and checked against its Paper API. Paper's 26.3
-server builds are currently alpha; runtime compatibility has not been smoke-tested.
+Minecraft 26.3 is listed for compatibility and checked against Paper's stable 26.3 API.
+Runtime compatibility on 26.3 has not been smoke-tested by the maintainer.
 
 Spigot, Bukkit-only servers, Velocity, and BungeeCord are not supported. In a proxy network,
 install the plugin on each backend and configure a unique `server-id` for each one.

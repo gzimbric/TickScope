@@ -13,6 +13,7 @@ server-id: "paper"
 # which is what actually restricts this to the host's loopback.
 bind-address: "127.0.0.1"
 port: 9101
+# Absolute, no trailing slash, query or fragment. Must not start with "//" or contain "%".
 path: "/metrics"
 
 # Require `Authorization: Bearer <token>` on every scrape. Empty means no auth, which is
@@ -24,9 +25,22 @@ path: "/metrics"
 # reads; for confidentiality put a TLS-terminating reverse proxy in front.
 auth-token: ""
 
+# Further tokens accepted alongside auth-token, so a token can be rotated without a scrape
+# failing in between: add the new token here, reload, switch the scraper to it, then remove
+# the old one and reload again. Up to 8 tokens in total. Changing tokens never restarts the
+# listener, so a scrape in flight is not cut off.
+auth-tokens: []
+
+# Connections served at the same time per client address; further ones are closed without
+# a response. Two covers one scraper plus an operator's curl. Raise it when several scrapers
+# reach TickScope through one reverse proxy or NAT, which makes them share an address.
+# Range 1 to 12; the top of the range lets one address occupy every worker.
+max-connections-per-address: 2
+
 # How often to sample on Paper's main thread or Folia's global region. 100 ticks = 5s.
 # Entity and tile-entity walks run separately on the slower scan cadence below.
-# Sampling faster than Prometheus scrapes usually buys nothing.
+# Sampling faster than Prometheus scrapes usually buys nothing. Minimum 20; a lower value
+# is raised to 20 with a warning in the log.
 collection-interval-ticks: 100
 
 # Per-world entity / tile-entity / chunk / player series.
@@ -42,10 +56,17 @@ entity-types:
   # The per-type breakdown, e.g. mc_world_entities_by_type{type="zombie"}. Turning this
   # off keeps the cheaper per-world totals; interval-ticks still governs both.
   enabled: true
+  # Idle ticks between the end of one world scan and the start of the next. The scan
+  # itself takes about one tick per chunks-per-tick loaded chunks, so the time between two
+  # samples is this plus the scan. Minimum 100; a lower value is raised to 100 with a
+  # warning in the log.
   interval-ticks: 600
-  # Maximum loaded chunks inspected on one Paper tick. A scan may span multiple ticks.
+  # Maximum loaded chunks inspected on one Paper tick, 1 to 1000. A scan may span many
+  # ticks; the last complete sample stays published until the next one finishes.
   chunks-per-tick: 32
   # Optional registry names to export, e.g. [zombie, chicken]. Empty means all types.
+  # Names are matched as lowercase registry keys without a namespace, so `Zombie` and
+  # `minecraft:zombie` both mean `zombie`.
   # Filters the breakdown only; per-world entity totals still include every entity.
   # This reduces exported series, but the included world's entities are still walked.
   allowlist: []

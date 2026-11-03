@@ -25,10 +25,14 @@ configured bearer token prevents anonymous reads but does not encrypt the HTTP c
 Use a firewall or loopback-only binding for network isolation and a TLS-terminating reverse
 proxy whenever metrics cross an untrusted network.
 
-The endpoint enforces its own per-connection read and exchange deadlines, so a client that opens
-a connection and stops sending is disconnected rather than left holding a worker. A large enough
-burst of such connections can still delay a scrape until those deadlines expire, but the endpoint
-recovers without intervention.
+The endpoint enforces its own per-connection read timeout (3 seconds) and exchange deadline
+(15 seconds from accept), so a client that opens a connection and stops sending, or keeps
+trickling bytes, is disconnected rather than left holding a worker. A large enough burst of such
+connections can still delay a scrape until those deadlines expire, but the endpoint recovers
+without intervention. Each client address is served at most `max-connections-per-address`
+connections at a time (2 by default); further connections from that address are closed without
+a response, so several scrapers behind one reverse proxy or NAT share that limit. When a token
+is configured, every request without it is answered 401, whatever its path or method.
 
 TickScope makes no outbound network connections and exports no player names. Metrics still reveal
 player activity and world-level entity and chunk information, so the endpoint should not be exposed

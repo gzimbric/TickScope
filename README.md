@@ -17,19 +17,23 @@ dependency-free plugin exposes tick health, players, per-world counters, JVM and
 and player event counters for dashboards in Grafana.
 
 ```text
-mc_tick_duration_seconds{statistic="p99"} 0.0216
-mc_tps{window="1m"} 20.0
-mc_players_online 4
-mc_world_entities_by_type{world="world",type="chicken"} 35
+mc_tick_duration_seconds{server="paper",statistic="p99"} 0.0216
+mc_tps{server="paper",window="1m"} 20
+mc_players_online{server="paper"} 4
+mc_world_entities_by_type{server="paper",world="world",type="chicken"} 35
 ```
 
 ## Highlights
 
-- Exact p50, p95, and p99 tick times from Paper's raw tick-duration window
+- Exact p50, p95, and p99 tick times from Paper's raw tick-duration window, plus a cumulative
+  tick-time histogram for `histogram_quantile` across any window and across servers
 - Player-active regional TPS and average MSPT summaries where the Folia-compatible server API
   exposes them (including Canvas)
-- Per-world entities, entity types, tile entities, chunks, and players
-- JVM memory, threads, garbage collection, process CPU, and uptime
+- Per-world entities, entity types, tile entities, chunks, players, and chunk load, unload and
+  generation counters
+- JVM memory areas and pools, NIO buffer pools, threads, garbage collection, process CPU,
+  open file descriptors, and uptime
+- Server and per-world view and simulation distance, online mode, and whitelist state
 - No runtime dependencies, outbound telemetry, database, or embedded framework
 - Main-thread-safe snapshots; HTTP scrapes never call Bukkit or block a tick
 - Optional bearer authentication and failure-safe configuration reloads
@@ -93,8 +97,8 @@ Paper 1.18.2+, Paper-compatible Purpur servers, Folia, and Folia-compatible Canv
 supported. Spigot, Bukkit, Velocity, and BungeeCord are not supported. Install TickScope on each
 backend in a proxy network and assign each server a unique `server-id`.
 
-Minecraft 26.3 is listed for compatibility, and CI compiles against its Paper API. Paper's
-26.3 server builds are currently alpha; runtime compatibility has not been smoke-tested.
+Minecraft 26.3 is listed for compatibility, and CI compiles and tests against Paper's stable
+26.3 API. Runtime compatibility on 26.3 has not been smoke-tested by the maintainer.
 
 Paper exposes a single server tick, so TickScope publishes exact `mc_tick_duration_seconds`,
 `mc_tick_samples`, and `mc_tps` series there. Folia has no truthful server-wide equivalent. On Folia, those series are

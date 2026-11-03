@@ -4,6 +4,97 @@ Release notes are written here by hand. The release workflow reads the section m
 version being tagged and uses it verbatim for the GitHub release and the Modrinth changelog,
 so this file is the one place a user-facing change gets described.
 
+## Unreleased
+
+Fixes:
+
+- A plugin disabled and enabled again without a server restart, for example through a plugin
+  manager, collected nothing on Folia: the shutdown flag and the closed player sampler were
+  never reset. Both are reset on enable, and the event counters survive the round trip.
+- On Folia, a reload replaced the published snapshot with an all-zero placeholder for one tick
+  and dropped the ping and regional summaries for one interval. A reload keeps the current
+  snapshot and carries the last accepted player sample into the new collector.
+- The placeholder published before the first collection reported zero heap, zero uptime and a
+  1970 start time. JVM, process and event readings are real from the start; only the values the
+  server owns wait for the first collection.
+- A failing first sample during `/tickscope reload` left the collector with no scheduled tasks
+  and the endpoint frozen. That sample is guarded like every scheduled one, and the
+  configuration file is read before the runtime lock is taken, so Folia's global region never
+  waits on disk I/O.
+- `mc_events_total{event="chat"}` counted only messages no plugin cancelled, which left it at
+  zero on servers whose chat plugin cancels and re-sends every message. Cancelled chat is now
+  counted: the series counts messages players sent.
+- A token containing non-ASCII characters never authenticated, because request headers were
+  decoded byte by byte. Headers are decoded as UTF-8.
+- `entity-types.allowlist` entries written as `Zombie` or `minecraft:zombie` silently matched
+  nothing. Entries are normalised to lowercase registry keys without a namespace, and an entry
+  that cannot be a registry name is rejected.
+- A `path` starting with `//` or containing `%` was accepted but unreachable; a bracketed IPv6
+  `bind-address` such as `[::1]` produced an invalid URL in `/tickscope status`; an
+  `auth-token` of only spaces silently disabled authentication. All three are handled at parse
+  time.
+- The exchange deadline starts when a connection is accepted rather than when a worker picks it
+  up, so a connection queued behind stalled clients can no longer wait without any deadline.
+  Cancelled watchdog tasks leave the scheduler at once instead of lingering for 15 seconds.
+- A renderer failure answers 500 and is logged once a minute instead of closing the connection
+  in silence; an over-long request line or header line answers 414 or 431 instead of a bare
+  close; a blank line ahead of the request line is tolerated. With a token configured, every
+  request without it is answered 401 before the path or method is looked at.
+- `mc_tick_duration_seconds` is absent until Paper's tick ring has samples, instead of reporting
+  0 s for every statistic on a freshly started server. `mc_tick_samples` still says how many
+  ticks the window holds.
+- Every metric family is written as one contiguous block in a stable order. Prometheus accepted
+  the interleaved output, but stricter text-format parsers split such families into untyped
+  fragments.
+- `/tickscope status` says `disabled` for the world scan when neither per-world nor entity-type
+  series are enabled, and says so when startup failed instead of raising an error.
+- On Folia, a regional-metrics method with an unexpected return type is ignored instead of
+  failing every player sample.
+
+Features:
+
+- `mc_tick_time_seconds`, a cumulative histogram of tick durations on Paper fed by the
+  end-of-tick event: `histogram_quantile` across any window and across servers, the uncapped
+  tick rate from its count, and the mean tick time over any range.
+- `mc_world_chunk_loads_total`, `mc_world_chunk_unloads_total` and
+  `mc_world_chunk_generations_total` per world, on Paper and Folia.
+- `mc_jvm_memory_pool_*` per memory pool, including the occupancy right after the pool's last
+  collection, and `mc_jvm_buffer_pool_*` for the NIO buffer pools the JDK tracks.
+- `mc_process_open_fds` and `mc_process_max_fds`, read on the HTTP thread rather than the tick
+  thread; absent where the JVM cannot report them.
+- `mc_server_view_distance`, `mc_server_simulation_distance`, `mc_server_online_mode`,
+  `mc_server_whitelist_enabled` and `mc_server_whitelist_enforced`, plus
+  `mc_world_view_distance` and `mc_world_simulation_distance`.
+- `mc_events_total` gains the `command` (player-typed, not cancelled) and `kick` values.
+- `mc_http_connections_rejected_total` counts connections the endpoint turned away, by reason.
+- `auth-tokens` accepts further tokens beside `auth-token`, so a token can be rotated without a
+  scrape failing in between. Token changes apply in place; the listener is no longer restarted.
+- `max-connections-per-address` makes the per-address connection cap (2 by default)
+  configurable for scrapers that share a reverse proxy or NAT address.
+- The Grafana dashboard gains panels for the histogram quantiles, the tick-time distribution,
+  the actual tick rate, chunk churn and generation, memory pools after collection, buffer
+  pools, file descriptors and rejected connections. The alert bundle gains
+  `TickScopeFileDescriptorsNearLimit`.
+
+Changes:
+
+- Tile-entity totals come from one pass over each world's chunk holders per scan instead of a
+  per-chunk walk that allocated a block state for every block entity. A scan takes each
+  world's chunk list when it reaches that world rather than every list up front.
+- Shipped configuration comments state the enforced minimums, the chunk budget range, the
+  accepted allowlist form, the connection cap and what `entity-types.interval-ticks` measures:
+  the idle gap between two scans, not the scan period.
+- The release workflow refreshes the GitHub release notes on a retry, the Modrinth project body
+  comes from a script that fails on a relative link, the link checkers cover `docs/` and the
+  alert rules, and CI compiles and tests against Paper's stable 26.3 API.
+
+**Upgrading:** existing configuration files continue to work. Every new series is an addition;
+nothing is renamed or removed. `mc_events_total` has two more `event` values, so a
+`sum(rate(mc_events_total[5m]))` without `by (event)` now includes commands and kicks.
+`mc_tick_duration_seconds` is absent for the first few seconds after a restart, and
+`mc_events_total{event="chat"}` counts more on servers with a cancelling chat plugin. Re-import
+the dashboard to see the new panels.
+
 ## 2.0.1
 
 - Add Minecraft 26.3 to the Paper compatibility listings on Modrinth and Hangar. The same
