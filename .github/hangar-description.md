@@ -69,12 +69,12 @@ separately; they are not bundled into the plugin.
 ## Documentation and support
 
 - [Installation and configuration](https://github.com/gzimbric/TickScope/wiki)
-- [Collection health, filters, and alerts](https://github.com/gzimbric/TickScope/blob/v2.0.1/docs/monitoring.md)
-- [Grafana dashboard](https://raw.githubusercontent.com/gzimbric/TickScope/v2.0.1/assets/grafana/tickscope-dashboard.json)
-- [Per-server dashboard](https://raw.githubusercontent.com/gzimbric/TickScope/v2.0.1/assets/grafana/tickscope-per-server-dashboard.json)
-- [Prometheus alert rules](https://raw.githubusercontent.com/gzimbric/TickScope/v2.0.1/assets/prometheus/tickscope-alerts.yml)
+- [Collection health, filters, and alerts](https://github.com/gzimbric/TickScope/blob/v2.1.0/docs/monitoring.md)
+- [Grafana dashboard](https://raw.githubusercontent.com/gzimbric/TickScope/v2.1.0/assets/grafana/tickscope-dashboard.json)
+- [Per-server dashboard](https://raw.githubusercontent.com/gzimbric/TickScope/v2.1.0/assets/grafana/tickscope-per-server-dashboard.json)
+- [Prometheus alert rules](https://raw.githubusercontent.com/gzimbric/TickScope/v2.1.0/assets/prometheus/tickscope-alerts.yml)
 - [Source code](https://github.com/gzimbric/TickScope)
 - [Report a bug](https://github.com/gzimbric/TickScope/issues)
-- [Release notes](https://github.com/gzimbric/TickScope/releases/tag/v2.0.1)
+- [Release notes](https://github.com/gzimbric/TickScope/releases/tag/v2.1.0)
 
 Free and open source under GPL-3.0-or-later. Maintained by Gabe Zimbric.

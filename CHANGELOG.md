@@ -4,7 +4,7 @@ Release notes are written here by hand. The release workflow reads the section m
 version being tagged and uses it verbatim for the GitHub release and the Modrinth changelog,
 so this file is the one place a user-facing change gets described.
 
-## Unreleased
+## 2.1.0
 
 Fixes:
 
