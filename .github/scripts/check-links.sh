@@ -24,8 +24,9 @@ if [[ -n "$release_version" ]] &&
 fi
 WIKI_DIR=${WIKI_DIR:-_wiki}
 # Keep in step with the path filters in .github/workflows/link-check.yml. CHANGELOG.md is
-# included because the release workflow publishes it verbatim as the release notes.
-SEARCH_PATHS=(README.md SECURITY.md CHANGELOG.md pom.xml .github src/main/resources src/main/java assets/grafana)
+# included because the release workflow publishes it verbatim as the release notes; docs and
+# the alert rules because a runbook URL in a guide or an annotation rots like any other.
+SEARCH_PATHS=(README.md SECURITY.md CHANGELOG.md pom.xml .github docs src/main/resources src/main/java assets/grafana assets/prometheus)
 
 if [[ -d "$WIKI_DIR" ]]; then
   SEARCH_PATHS+=("$WIKI_DIR")
@@ -67,5 +68,5 @@ else
   echo "All links resolve."
 fi
 
-python3 .github/scripts/check-markdown-links.py README.md SECURITY.md CHANGELOG.md "$WIKI_DIR" || fail=1
+python3 .github/scripts/check-markdown-links.py README.md SECURITY.md CHANGELOG.md docs "$WIKI_DIR" || fail=1
 exit "$fail"

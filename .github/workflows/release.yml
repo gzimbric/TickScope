@@ -117,6 +117,16 @@ jobs:
           echo "newest=$newest_release" >> "$GITHUB_OUTPUT"
           echo "$RELEASE_TAG newest by semver: $newest_release (highest tag $newest)"
 
+          # The Hangar project page is published from tooling/.github/hangar-description.md,
+          # whose documentation links are pinned to a release tag by hand. Publishing the
+          # newest release with the previous tag still in there is the mistake this catches;
+          # an older maintenance release legitimately leaves the page on the newer tag.
+          if [[ "$newest_release" == true ]] \
+             && ! grep -qE "/${RELEASE_TAG//./\\.}([/)]|$)" tooling/.github/hangar-description.md; then
+            echo "::error::tooling/.github/hangar-description.md does not link to $RELEASE_TAG; update its pinned links before publishing" >&2
+            exit 1
+          fi
+
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -145,6 +155,9 @@ jobs:
               exit 1
             fi
             gh release upload "$RELEASE_TAG" "$artifact" "$artifact.sha256" --clobber
+            # Notes come from CHANGELOG.md on main, so a correction made after publication
+            # has to reach the existing release on a rerun, as it already does on Modrinth.
+            gh release edit "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/release-notes.md"
           else
             gh release create "$RELEASE_TAG" "$artifact" "$artifact.sha256" \
               --verify-tag --title "TickScope $RELEASE_TAG" \

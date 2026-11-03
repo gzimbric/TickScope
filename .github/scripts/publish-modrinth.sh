@@ -17,8 +17,10 @@ ARTIFACT=$2
 CHANGELOG_FILE=$3
 REPO_ROOT=${REPO_ROOT:-.}
 # Featuring is for the newest release only; a back-sync of an older version must not
-# take the flag away from it.
-FEATURE=${MODRINTH_FEATURE:-true}
+# take the flag away from it. There is no default on purpose: a run by hand has to decide,
+# because defaulting to true once made a changelog fix for an old version steal the flag.
+: "${MODRINTH_FEATURE:?MODRINTH_FEATURE must be set to true or false}"
+FEATURE=$MODRINTH_FEATURE
 [[ "$FEATURE" == true || "$FEATURE" == false ]] || { echo "MODRINTH_FEATURE must be true or false" >&2; exit 2; }
 PROJECT_ID=A0ZakExK
 API=https://api.modrinth.com/v2
@@ -116,28 +118,9 @@ if [[ "$FEATURE" == true ]]; then
   done < <(jq -r --arg current "$version_id" '.[] | select(.featured and .id != $current) | .id' <<<"$versions")
 fi
 
-# Modrinth does not update the project body when a version is uploaded. Relative repository
-# links also have to become absolute, and everything pointing back to GitHub is removed: the
-# whole shields.io badge row and the download calls to action. Modrinth has its own Files tab
-# and shows platform, version and licence in its sidebar, so those badges are duplicated
-# clutter that also sends readers off-platform, costing the download about to happen here.
-body=$(perl -0pe '
-  s#src="assets/icon\.png"#src="https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/icon.png"#g;
-  s#src="assets/grafana/dashboard-preview\.png"#src="https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/dashboard-preview.png"#g;
-  s#\]\(assets/grafana/tickscope-dashboard\.json\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/tickscope-dashboard.json)#g;
-  s#\]\(docs/monitoring\.md\)#](https://github.com/gzimbric/TickScope/blob/main/docs/monitoring.md)#g;
-  s#\]\(docs/metric-migration\.md\)#](https://github.com/gzimbric/TickScope/blob/main/docs/metric-migration.md)#g;
-  s#\]\(assets/prometheus/tickscope-alerts\.yml\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/prometheus/tickscope-alerts.yml)#g;
-  s#\]\(assets/grafana/tickscope-per-server-dashboard\.json\)#](https://raw.githubusercontent.com/gzimbric/TickScope/main/assets/grafana/tickscope-per-server-dashboard.json)#g;
-  s#\]\(LICENSE\)#](https://github.com/gzimbric/TickScope/blob/main/LICENSE)#g;
-  s{^\[!\[[^\n]*\n}{}mg;
-  s{(^\# [^\n]*\n)\n+}{$1\n}m;
-  s#^1\. \[Download the latest release\]\([^)]*\)\.#1. Download the latest jar from the **Files** tab at the top of this page.#m;
-  s#^- \[Download on GitHub\]\([^)]*\)\n##m;
-  s#^- \[Download on Modrinth\]\([^)]*\)\n##m;
-  s#^- \[Download on Hangar\]\([^)]*\)\n##m;
-  s{^## Download and support$}{## Support}m;
-' "$REPO_ROOT/README.md")
+# Modrinth does not update the project body when a version is uploaded. The rewrite lives in
+# its own script so CI can run it on every push and refuse a README whose links would break.
+body=$(bash "$REPO_ROOT/.github/scripts/modrinth-body.sh" "$REPO_ROOT/README.md")
 project_data=$(jq -cn --arg body "$body" \
   --arg wiki "https://github.com/gzimbric/TickScope/wiki" \
   '{body:$body,wiki_url:$wiki}')

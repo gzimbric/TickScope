@@ -1,2 +1,4 @@
 target/
 __pycache__/
+# The wiki clone check-links.sh reads when run by hand.
+_wiki/

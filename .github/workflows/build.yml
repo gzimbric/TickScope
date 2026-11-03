@@ -42,8 +42,11 @@ jobs:
           java-version: "25"
           distribution: temurin
           cache: maven
+      # The newest stable build at the time of writing, from
+      # https://repo.papermc.io/repository/maven-public/io/papermc/paper/paper-api/maven-metadata.xml.
+      # Dependabot cannot bump a workflow literal, so this is part of the pre-tag checklist.
       - name: Compile and test against Paper 26.3 API
-        run: mvn -B -Dpaper.version=26.3.build.40-alpha clean verify
+        run: mvn -B -Dpaper.version=26.3.build.238-stable clean verify
 
   monitoring:
     runs-on: ubuntu-latest
@@ -54,6 +57,9 @@ jobs:
           python3 -m json.tool assets/grafana/tickscope-dashboard.json > /dev/null
           python3 -m json.tool assets/grafana/tickscope-per-server-dashboard.json > /dev/null
           python3 .github/scripts/check-markdown-links.py README.md docs
+          # The Modrinth page is README.md with its links rewritten; a link the rewrite
+          # cannot handle must fail here, not on the project page after a release.
+          bash .github/scripts/modrinth-body.sh README.md > /dev/null
       - name: Validate alert rules and behavior
         env:
           PROMETHEUS_VERSION: 3.14.0

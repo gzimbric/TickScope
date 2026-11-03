@@ -16,13 +16,18 @@ test -f "$CHANGELOG"
 jq -e '.PAPER | type == "array" and length > 0' \
   "$REPO_ROOT/.github/hangar-paper-versions.json" >/dev/null
 
+# Temporary files come from mktemp rather than RUNNER_TEMP, so a failed upload can be
+# retried by hand outside GitHub Actions as well.
+existing=$(mktemp)
+metadata=$(mktemp)
+trap 'rm -f "$existing" "$metadata"' EXIT
+
 local_sha=$(sha256sum "$ARTIFACT" | cut -d' ' -f1)
 version_url="$API/projects/$PROJECT/versions/$VERSION"
-status=$(curl -sS -L -o "$RUNNER_TEMP/hangar-existing.json" -w '%{http_code}' \
+status=$(curl -sS -L -o "$existing" -w '%{http_code}' \
   -H "User-Agent: $USER_AGENT" "$version_url")
 if [[ "$status" == 200 ]]; then
-  published_sha=$(jq -r '.downloads.PAPER.fileInfo.sha256Hash // empty' \
-    "$RUNNER_TEMP/hangar-existing.json")
+  published_sha=$(jq -r '.downloads.PAPER.fileInfo.sha256Hash // empty' "$existing")
   if [[ -z "$published_sha" || "$published_sha" != "$local_sha" ]]; then
     echo "Existing Hangar version $VERSION differs from the tagged jar; refusing to replace it." >&2
     exit 1
@@ -37,8 +42,6 @@ session=$(curl --fail-with-body -sS -G -X POST \
   -H "User-Agent: $USER_AGENT" --data-urlencode "apiKey=$HANGAR_API_TOKEN" \
   "$API/authenticate")
 jwt=$(jq -er '.token' <<<"$session")
-metadata=$(mktemp)
-trap 'rm -f "$metadata"' EXIT
 if [[ "$status" == 404 ]]; then
   jq -n --arg version "$VERSION" --rawfile description "$CHANGELOG" \
     --slurpfile platforms "$REPO_ROOT/.github/hangar-paper-versions.json" \
