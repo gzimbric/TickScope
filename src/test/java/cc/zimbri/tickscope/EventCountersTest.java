@@ -41,11 +41,37 @@ class EventCountersTest {
     }
 
     @Test
-    void everyEventSeriesExistsFromTheStartInAStableOrder() {
+    void countsChunkEventsPerWorldAndFiltersOnlyAtSnapshotTime() {
         EventCounters counters = new EventCounters();
-        assertEquals(java.util.List.of("login", "join", "quit", "chat", "death"),
+        counters.recordChunkLoad("world", true);
+        counters.recordChunkLoad("world", false);
+        counters.recordChunkUnload("world");
+        counters.recordChunkLoad("lobby", false);
+
+        assertEquals(java.util.List.of(
+                new Snapshot.WorldChunkEvents("lobby", 1, 0, 0),
+                new Snapshot.WorldChunkEvents("world", 2, 1, 1)), counters.chunkEvents(w -> true),
+                "sorted by world name, generated counted as a load as well");
+        assertEquals(java.util.List.of(new Snapshot.WorldChunkEvents("world", 2, 1, 1)),
+                counters.chunkEvents(w -> !w.equals("lobby")));
+        // Excluding a world hides it; re-including it does not restart its counters.
+        assertEquals(new Snapshot.WorldChunkEvents("lobby", 1, 0, 0), counters.chunkEvents(w -> true).get(0));
+    }
+
+    @Test
+    void everyEventSeriesExistsFromTheStartInAStableOrder() throws NoSuchMethodException {
+        EventCounters counters = new EventCounters();
+        assertEquals(java.util.List.of("login", "join", "quit", "chat", "death", "command", "kick"),
                 new java.util.ArrayList<>(counters.snapshot().keySet()));
         assertTrue(counters.snapshot().values().stream().allMatch(v -> v == 0L));
+        // A cancelled command never ran and a cancelled kick never happened.
+        for (String handler : java.util.List.of("onCommand", "onKick")) {
+            EventHandler annotation = java.util.Arrays.stream(EventCounters.class.getMethods())
+                    .filter(m -> m.getName().equals(handler)).findFirst().orElseThrow()
+                    .getAnnotation(EventHandler.class);
+            assertEquals(EventPriority.MONITOR, annotation.priority(), handler);
+            assertTrue(annotation.ignoreCancelled(), handler);
+        }
     }
 
     @Test

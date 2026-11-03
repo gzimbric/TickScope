@@ -23,12 +23,20 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerKickEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.world.ChunkLoadEvent;
+import org.bukkit.event.world.ChunkUnloadEvent;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Predicate;
 
 /**
  * Monotonic event counters, the one thing UnifiedMetrics exposes that cannot be sampled —
@@ -38,13 +46,24 @@ import java.util.concurrent.atomic.LongAdder;
  * without changing it, and LongAdder keeps the async chat handler off a contended lock.
  * Whether a cancelled event counts is decided per event below: ignoreCancelled filters what
  * is counted, nothing more.
+ *
+ * <p>On Folia the chunk and player events arrive on whichever region owns them, possibly
+ * several at once; nothing here reads the chunk or the player, only a world name.
  */
 final class EventCounters implements Listener {
 
     private final Map<String, LongAdder> counts = new LinkedHashMap<>();
+    private final ConcurrentHashMap<String, WorldCounters> worlds = new ConcurrentHashMap<>();
+
+    private record WorldCounters(LongAdder loads, LongAdder unloads, LongAdder generated) {
+        private WorldCounters() {
+            this(new LongAdder(), new LongAdder(), new LongAdder());
+        }
+    }
 
     EventCounters() {
-        for (String k : new String[]{"login", "join", "quit", "chat", "death"}) {
+        // New names go at the end so the exposition order of the existing ones never moves.
+        for (String k : new String[]{"login", "join", "quit", "chat", "death", "command", "kick"}) {
             counts.put(k, new LongAdder());
         }
     }
@@ -88,9 +107,55 @@ final class EventCounters implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent e) { bump("death"); }
 
+    // A cancelled command never ran. Console, RCON and plugin-dispatched commands do not fire
+    // this event; panels polling RCON every few seconds would otherwise drown the player signal.
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onCommand(PlayerCommandPreprocessEvent e) { bump("command"); }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onKick(PlayerKickEvent e) { bump("kick"); }
+
+    // Neither chunk event is cancellable. Only the world name is read: on Folia the chunk
+    // belongs to the region delivering the event and must not be touched from anywhere else.
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkLoad(ChunkLoadEvent e) {
+        recordChunkLoad(e.getWorld().getName(), e.isNewChunk());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onChunkUnload(ChunkUnloadEvent e) {
+        recordChunkUnload(e.getWorld().getName());
+    }
+
+    void recordChunkLoad(String world, boolean generated) {
+        WorldCounters c = worlds.computeIfAbsent(world, ignored -> new WorldCounters());
+        c.loads.increment();
+        if (generated) c.generated.increment();
+    }
+
+    void recordChunkUnload(String world) {
+        worlds.computeIfAbsent(world, ignored -> new WorldCounters()).unloads.increment();
+    }
+
     Map<String, Long> snapshot() {
         Map<String, Long> out = new LinkedHashMap<>();
         counts.forEach((k, v) -> out.put(k, v.sum()));
+        return out;
+    }
+
+    /**
+     * Counts keep running for every world; the filter decides what is published, so excluding
+     * and re-including a world never resets its series.
+     */
+    List<Snapshot.WorldChunkEvents> chunkEvents(Predicate<String> included) {
+        List<Snapshot.WorldChunkEvents> out = new ArrayList<>();
+        worlds.forEach((world, c) -> {
+            if (included.test(world)) {
+                out.add(new Snapshot.WorldChunkEvents(world, c.loads.sum(), c.unloads.sum(),
+                        c.generated.sum()));
+            }
+        });
+        out.sort((a, b) -> a.world().compareTo(b.world()));
         return out;
     }
 }

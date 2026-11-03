@@ -131,7 +131,7 @@ class PrometheusWriterTest {
     void separatesCounterReadWorldSeriesFromScannedTotals() {
         Snapshot base = Snapshot.empty("paper", "1", "Paper", "17");
         Snapshot snapshot = with(base, 0d, 0d, 0,
-                List.of(new Snapshot.WorldStat("world", 361, 3)),
+                List.of(new Snapshot.WorldStat("world", 361, 3, 10, 6)),
                 List.of(new Snapshot.WorldTotals("world", 812, 44)),
                 base.regionTps(), base.regionTickDurations(), base.proc());
 
@@ -139,6 +139,8 @@ class PrometheusWriterTest {
 
         assertTrue(rendered.contains("mc_world_chunks{server=\"paper\",world=\"world\"} 361\n"));
         assertTrue(rendered.contains("mc_world_players{server=\"paper\",world=\"world\"} 3\n"));
+        assertTrue(rendered.contains("mc_world_view_distance{server=\"paper\",world=\"world\"} 10\n"));
+        assertTrue(rendered.contains("mc_world_simulation_distance{server=\"paper\",world=\"world\"} 6\n"));
         assertTrue(rendered.contains("mc_world_entities{server=\"paper\",world=\"world\"} 812\n"));
         assertTrue(rendered.contains("mc_world_tile_entities{server=\"paper\",world=\"world\"} 44\n"));
     }
@@ -147,7 +149,7 @@ class PrometheusWriterTest {
     void omitsScannedWorldTotalsWhenNoScanHasRun() {
         Snapshot base = Snapshot.empty("folia", "1", "Folia", "21", "folia");
         Snapshot snapshot = with(base, 0d, 0d, 0,
-                List.of(new Snapshot.WorldStat("world", 361, 3)),
+                List.of(new Snapshot.WorldStat("world", 361, 3, 10, 6)),
                 List.of(), base.regionTps(), base.regionTickDurations(), base.proc());
 
         String rendered = PrometheusWriter.render(snapshot);
@@ -158,17 +160,75 @@ class PrometheusWriterTest {
     }
 
     @Test
-    void rendersRejectedConnectionsOnlyWhenThereIsAnEndpoint() {
+    void rendersTheTickHistogramWithCumulativeBuckets() {
+        String rendered = PrometheusWriter.render(fullPaperSnapshot());
+
+        assertTrue(rendered.contains("# TYPE mc_tick_time_seconds histogram\n"));
+        assertTrue(rendered.contains("mc_tick_time_seconds_bucket{server=\"paper\",le=\"0.005\"} 1\n"));
+        assertTrue(rendered.contains("mc_tick_time_seconds_bucket{server=\"paper\",le=\"0.05\"} 2\n"));
+        assertTrue(rendered.contains("mc_tick_time_seconds_bucket{server=\"paper\",le=\"0.25\"} 2\n"));
+        assertTrue(rendered.contains("mc_tick_time_seconds_bucket{server=\"paper\",le=\"0.5\"} 3\n"));
+        assertTrue(rendered.contains("mc_tick_time_seconds_bucket{server=\"paper\",le=\"1\"} 3\n"));
+        assertTrue(rendered.contains("mc_tick_time_seconds_bucket{server=\"paper\",le=\"2.5\"} 3\n"));
+        assertTrue(rendered.contains("mc_tick_time_seconds_bucket{server=\"paper\",le=\"+Inf\"} 3\n"));
+        assertTrue(rendered.contains("mc_tick_time_seconds_sum{server=\"paper\"} "
+                + Double.toString(0.004 + 0.05 + 0.3) + "\n"));
+        assertTrue(rendered.contains("mc_tick_time_seconds_count{server=\"paper\"} 3\n"));
+
+        Snapshot folia = Snapshot.empty("folia", "1", "Folia", "21", "folia");
+        assertFalse(PrometheusWriter.render(folia).contains("mc_tick_time_seconds"));
+    }
+
+    @Test
+    void rendersMemoryPoolsAndBufferPools() {
+        String rendered = PrometheusWriter.render(fullPaperSnapshot());
+
+        assertTrue(rendered.contains("mc_jvm_memory_pool_used_bytes{server=\"paper\",pool=\"G1 Old Gen\",area=\"heap\"} 100\n"));
+        assertTrue(rendered.contains("mc_jvm_memory_pool_committed_bytes{server=\"paper\",pool=\"G1 Old Gen\",area=\"heap\"} 200\n"));
+        assertTrue(rendered.contains("mc_jvm_memory_pool_max_bytes{server=\"paper\",pool=\"CodeHeap 'non-nmethods'\",area=\"nonheap\"} -1\n"));
+        assertTrue(rendered.contains("mc_jvm_memory_pool_collection_used_bytes{server=\"paper\",pool=\"G1 Old Gen\",area=\"heap\"} 90\n"));
+        assertFalse(rendered.contains("mc_jvm_memory_pool_collection_used_bytes{server=\"paper\",pool=\"CodeHeap"),
+                "pools without a collection usage are absent from that family");
+        assertTrue(rendered.contains("mc_jvm_buffer_pool_used_bytes{server=\"paper\",pool=\"direct\"} 4096\n"));
+        assertTrue(rendered.contains("mc_jvm_buffer_pool_capacity_bytes{server=\"paper\",pool=\"direct\"} 4096\n"));
+        assertTrue(rendered.contains("mc_jvm_buffer_pool_buffers{server=\"paper\",pool=\"direct\"} 4\n"));
+        assertTrue(rendered.contains("mc_jvm_buffer_pool_buffers{server=\"paper\",pool=\"mapped\"} 0\n"));
+    }
+
+    @Test
+    void rendersServerConfigurationAndChunkCounters() {
+        String rendered = PrometheusWriter.render(fullPaperSnapshot());
+
+        assertTrue(rendered.contains("mc_server_view_distance{server=\"paper\"} 10\n"));
+        assertTrue(rendered.contains("mc_server_simulation_distance{server=\"paper\"} 6\n"));
+        assertTrue(rendered.contains("mc_server_online_mode{server=\"paper\"} 1\n"));
+        assertTrue(rendered.contains("mc_server_whitelist_enabled{server=\"paper\"} 1\n"));
+        assertTrue(rendered.contains("mc_server_whitelist_enforced{server=\"paper\"} 0\n"));
+        assertTrue(rendered.contains("mc_world_chunk_loads_total{server=\"paper\",world=\"world\"} 900\n"));
+        assertTrue(rendered.contains("mc_world_chunk_unloads_total{server=\"paper\",world=\"world\"} 850\n"));
+        assertTrue(rendered.contains("mc_world_chunk_generations_total{server=\"paper\",world=\"nether\"} 1\n"));
+
+        // Unknown until the server has been asked; never a made-up zero.
+        String placeholder = PrometheusWriter.render(Snapshot.empty("paper", "1", "Paper", "17"));
+        assertFalse(placeholder.contains("mc_server_"));
+        assertFalse(placeholder.contains("mc_world_chunk_"));
+    }
+
+    @Test
+    void rendersDescriptorsAndRejectedConnectionsOnlyWhenTheyAreKnown() {
         Snapshot paper = fullPaperSnapshot();
         var health = new CollectionHealth(true, false);
         var stats = new ScrapeStats();
         stats.rejectedPerAddress();
 
-        String full = PrometheusWriter.render(paper, health, stats);
+        String full = PrometheusWriter.render(paper, health, new Snapshot.Descriptors(120, 65536), stats);
+        assertTrue(full.contains("mc_process_open_fds{server=\"paper\"} 120\n"));
+        assertTrue(full.contains("mc_process_max_fds{server=\"paper\"} 65536\n"));
         assertTrue(full.contains("mc_http_connections_rejected_total{server=\"paper\",reason=\"per_address\"} 1\n"));
         assertTrue(full.contains("mc_http_connections_rejected_total{server=\"paper\",reason=\"saturated\"} 0\n"));
 
         String bare = PrometheusWriter.render(paper, health);
+        assertFalse(bare.contains("mc_process_open_fds"), "unavailable on this JVM means absent");
         assertFalse(bare.contains("mc_http_connections_rejected_total"), "no endpoint, no endpoint counters");
     }
 
@@ -197,7 +257,8 @@ class PrometheusWriterTest {
     void emitsExactlyTheDocumentedMetricFamilies() {
         var paperHealth = new CollectionHealth(true, false);
         var stats = new ScrapeStats();
-        String paper = PrometheusWriter.render(fullPaperSnapshot(), paperHealth, stats);
+        String paper = PrometheusWriter.render(fullPaperSnapshot(), paperHealth,
+                new Snapshot.Descriptors(1, 2), stats);
         Snapshot foliaBase = Snapshot.empty("folia", "1", "Folia", "21", "folia");
         Snapshot folia = with(foliaBase, 0.03, 0.05, 2, foliaBase.worlds(), foliaBase.worldTotals(),
                 List.of(new Snapshot.RegionTps("1m", 2, 19, 19.5, 20)),
@@ -205,7 +266,7 @@ class PrometheusWriterTest {
                 foliaBase.proc());
         var foliaHealth = new CollectionHealth(false, true);
         foliaHealth.players(2, 2);
-        String foliaRendered = PrometheusWriter.render(folia, foliaHealth, stats);
+        String foliaRendered = PrometheusWriter.render(folia, foliaHealth, new Snapshot.Descriptors(1, 2), stats);
 
         java.util.Set<String> emitted = new java.util.TreeSet<>();
         for (String line : (paper + foliaRendered).split("\n")) {
@@ -214,20 +275,31 @@ class PrometheusWriterTest {
         java.util.Set<String> documented = new java.util.TreeSet<>(List.of(
                 "mc_tickscope_info gauge",
                 "mc_tick_duration_seconds gauge", "mc_tick_samples gauge", "mc_tps gauge",
+                "mc_tick_time_seconds histogram",
                 "mc_folia_region_tps gauge", "mc_folia_region_tps_samples gauge",
                 "mc_folia_region_tick_duration_seconds gauge", "mc_folia_region_tick_duration_samples gauge",
                 "mc_players_online gauge", "mc_players_max gauge", "mc_plugins gauge",
+                "mc_server_view_distance gauge", "mc_server_simulation_distance gauge",
+                "mc_server_online_mode gauge", "mc_server_whitelist_enabled gauge",
+                "mc_server_whitelist_enforced gauge",
                 "mc_player_ping_seconds gauge",
                 "mc_world_chunks gauge", "mc_world_players gauge",
+                "mc_world_view_distance gauge", "mc_world_simulation_distance gauge",
                 "mc_world_entities gauge", "mc_world_tile_entities gauge", "mc_world_entities_by_type gauge",
+                "mc_world_chunk_loads_total counter", "mc_world_chunk_unloads_total counter",
+                "mc_world_chunk_generations_total counter",
                 "mc_jvm_memory_used_bytes gauge", "mc_jvm_memory_committed_bytes gauge",
                 "mc_jvm_memory_max_bytes gauge", "mc_jvm_memory_init_bytes gauge",
+                "mc_jvm_memory_pool_used_bytes gauge", "mc_jvm_memory_pool_committed_bytes gauge",
+                "mc_jvm_memory_pool_max_bytes gauge", "mc_jvm_memory_pool_collection_used_bytes gauge",
+                "mc_jvm_buffer_pool_used_bytes gauge", "mc_jvm_buffer_pool_capacity_bytes gauge",
+                "mc_jvm_buffer_pool_buffers gauge",
                 "mc_jvm_threads_current gauge", "mc_jvm_threads_daemon gauge", "mc_jvm_threads_peak gauge",
                 "mc_jvm_threads_started_total counter", "mc_jvm_classes_loaded gauge",
                 "mc_jvm_gc_collections_total counter", "mc_jvm_gc_seconds_total counter",
                 "mc_process_cpu_load_ratio gauge", "mc_system_cpu_load_ratio gauge",
                 "mc_process_cpu_seconds_total counter", "mc_process_start_time_seconds gauge",
-                "mc_uptime_seconds gauge",
+                "mc_uptime_seconds gauge", "mc_process_open_fds gauge", "mc_process_max_fds gauge",
                 "mc_events_total counter",
                 "mc_collection_duration_seconds gauge", "mc_entity_collection_duration_seconds gauge",
                 "mc_collection_enabled gauge", "mc_collection_last_success_timestamp_seconds gauge",
@@ -261,11 +333,12 @@ class PrometheusWriterTest {
         paperHealth.failure("world");
         var stats = new ScrapeStats();
         stats.rejectedPerAddress();
-        assertContiguousFamilies(PrometheusWriter.render(paper, paperHealth, stats));
+        assertContiguousFamilies(PrometheusWriter.render(paper, paperHealth,
+                new Snapshot.Descriptors(120, 65536), stats));
 
         Snapshot foliaBase = Snapshot.empty("folia", "1", "Folia", "21", "folia");
         Snapshot folia = with(foliaBase, 0.03, 0.05, 2,
-                List.of(new Snapshot.WorldStat("world", 300, 2)), List.of(),
+                List.of(new Snapshot.WorldStat("world", 300, 2, 10, 8)), List.of(),
                 List.of(new Snapshot.RegionTps("5s", 2, 19, 19.5, 20),
                         new Snapshot.RegionTps("1m", 2, 19, 19.5, 20)),
                 List.of(new Snapshot.RegionTickDuration("5s", 2, 0.004, 0.005, 0.006),
@@ -322,21 +395,21 @@ class PrometheusWriterTest {
                                  Snapshot.Proc proc) {
         return new Snapshot(base.serverId(), base.tickScopeVersion(), base.paperVersion(),
                 base.javaVersion(), base.platform(), base.collectionSeconds(),
-                base.entityCollectionSeconds(), base.ticks(), base.tps(),
+                base.entityCollectionSeconds(), base.ticks(), base.tickHistogram(), base.tps(),
                 base.playersOnline(), base.playersMax(), base.plugins(),
-                pingAverageSeconds, pingMaximumSeconds, pingSamples, worlds, worldTotals,
-                base.entityTypes(), regionTps, regionTickDurations, base.jvm(), proc,
+                pingAverageSeconds, pingMaximumSeconds, pingSamples, base.server(), worlds, worldTotals,
+                base.entityTypes(), base.chunkEvents(), regionTps, regionTickDurations, base.jvm(), proc,
                 base.events());
     }
 
     private static Snapshot withTicks(Snapshot base, Snapshot.Ticks ticks) {
         return new Snapshot(base.serverId(), base.tickScopeVersion(), base.paperVersion(),
                 base.javaVersion(), base.platform(), base.collectionSeconds(),
-                base.entityCollectionSeconds(), ticks, base.tps(),
+                base.entityCollectionSeconds(), ticks, base.tickHistogram(), base.tps(),
                 base.playersOnline(), base.playersMax(), base.plugins(),
                 base.pingAverageSeconds(), base.pingMaximumSeconds(), base.pingSamples(),
-                base.worlds(), base.worldTotals(), base.entityTypes(),
-                base.regionTps(), base.regionTickDurations(), base.jvm(),
+                base.server(), base.worlds(), base.worldTotals(), base.entityTypes(),
+                base.chunkEvents(), base.regionTps(), base.regionTickDurations(), base.jvm(),
                 base.proc(), base.events());
     }
 
@@ -356,11 +429,11 @@ class PrometheusWriterTest {
         paperHealth.success("main");
         paperHealth.success("world");
         java.nio.file.Files.writeString(dir.resolve("paper.prom"), PrometheusWriter.render(
-                fullPaperSnapshot(), paperHealth, stats));
+                fullPaperSnapshot(), paperHealth, new Snapshot.Descriptors(812, 1048576), stats));
 
         Snapshot foliaBase = Snapshot.empty("folia\"1", "1", "Canvas 26.2", "21", "folia");
         Snapshot folia = with(foliaBase, 0.03, 0.05, 2,
-                List.of(new Snapshot.WorldStat("world", 300, 2)), List.of(),
+                List.of(new Snapshot.WorldStat("world", 300, 2, 10, 8)), List.of(),
                 List.of(new Snapshot.RegionTps("5s", 2, 19, 19.5, 20), new Snapshot.RegionTps("1m", 2, 19, 19.5, 20)),
                 List.of(new Snapshot.RegionTickDuration("5s", 2, 0.004, 0.005, 0.006)),
                 new Snapshot.Proc(0.1, 0.2, 30, 1.7e9, 42));
@@ -368,25 +441,36 @@ class PrometheusWriterTest {
         foliaHealth.success("main");
         foliaHealth.players(1, 2);
         java.nio.file.Files.writeString(dir.resolve("folia.prom"), PrometheusWriter.render(
-                folia, foliaHealth, stats));
+                folia, foliaHealth, Snapshot.Descriptors.UNAVAILABLE, stats));
 
         java.nio.file.Files.writeString(dir.resolve("startup.prom"), PrometheusWriter.render(
                 Snapshot.empty("paper", "1", "Paper", "17"), new CollectionHealth(true, false),
-                new ScrapeStats()));
+                Snapshot.Descriptors.UNAVAILABLE, new ScrapeStats()));
     }
 
-    /** A Paper snapshot with every family populated. */
+    /** A Paper snapshot with every family populated, including the ones added in 2.1. */
     static Snapshot fullPaperSnapshot() {
+        var histogram = new TickHistogram();
+        histogram.record(0.004);
+        histogram.record(0.05);
+        histogram.record(0.3);
         return new Snapshot("paper", "1", "Paper", "17", "paper", 0.001, 0.2,
                 new Snapshot.Ticks(0.002, 0.001, 0.004, 0.002, 0.004, 0.004, 4),
+                histogram.snapshot(),
                 new double[]{20, 19.5, 19}, 3, 20, 7, 0.03, 0.05, 3,
-                List.of(new Snapshot.WorldStat("world", 300, 2), new Snapshot.WorldStat("nether", 50, 1)),
+                new Snapshot.ServerInfo(10, 6, true, true, false),
+                List.of(new Snapshot.WorldStat("world", 300, 2, 10, 6), new Snapshot.WorldStat("nether", 50, 1, 8, 5)),
                 List.of(new Snapshot.WorldTotals("world", 800, 40), new Snapshot.WorldTotals("nether", 90, 4)),
                 List.of(new Snapshot.TypeCount("world", "zombie", 12), new Snapshot.TypeCount("nether", "ghast", 2)),
+                List.of(new Snapshot.WorldChunkEvents("nether", 5, 4, 1), new Snapshot.WorldChunkEvents("world", 900, 850, 120)),
                 List.of(), List.of(),
                 new Snapshot.Jvm(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
                         List.of(new Snapshot.Gc("G1 Young Generation", 5, 0.1),
-                                new Snapshot.Gc("G1 Old Generation", 1, Double.NaN))),
+                                new Snapshot.Gc("G1 Old Generation", 1, Double.NaN)),
+                        List.of(new Snapshot.MemoryPool("G1 Old Gen", "heap", 100, 200, 300, 90),
+                                new Snapshot.MemoryPool("CodeHeap 'non-nmethods'", "nonheap", 10, 20, -1, Double.NaN)),
+                        List.of(new Snapshot.BufferPool("direct", 4, 4096, 4096),
+                                new Snapshot.BufferPool("mapped", 0, 0, 0))),
                 new Snapshot.Proc(0.1, 0.2, 30, 1.7e9, 42),
                 java.util.Map.of("join", 1L, "quit", 2L));
     }

@@ -59,6 +59,7 @@ public final class TickScope extends JavaPlugin {
     private FoliaPlayerSampler foliaPlayers;
     // Process-lifetime state: created once, so counters survive reloads and re-enables.
     private EventCounters events;
+    private TickHistogram tickHistogram;
     private ScrapeStats scrapeStats;
     private final AtomicLong foliaPlayerSampleGeneration = new AtomicLong();
     private final ReentrantLock runtimeLock = new ReentrantLock();
@@ -107,6 +108,10 @@ public final class TickScope extends JavaPlugin {
             if (events == null) events = new EventCounters();
             if (scrapeStats == null) scrapeStats = new ScrapeStats();
             getServer().getPluginManager().registerEvents(events, this);
+            if (!scheduler.isFolia()) {
+                if (tickHistogram == null) tickHistogram = new TickHistogram();
+                getServer().getPluginManager().registerEvents(tickHistogram, this);
+            }
             Settings settings = readSettings();
             configureCollector(settings);
             startHttp(settings);
@@ -465,7 +470,7 @@ public final class TickScope extends JavaPlugin {
         // tile-entity series until the next scan lands.
         MetricsCollector previous = collector;
         collector = new MetricsCollector(settings.serverId, settings.perWorld, settings.byType,
-                events, pluginVersion, paperVersion, javaVersion,
+                events, tickHistogram, pluginVersion, paperVersion, javaVersion,
                 scheduler.isFolia() ? "folia" : "paper",
                 previous == null ? null : previous.heavyWorldData(),
                 settings.excludedWorlds, settings.allowedTypes);
@@ -582,7 +587,8 @@ public final class TickScope extends JavaPlugin {
 
     /**
      * Share one rendered body across scrapes until collection, health or the endpoint's own
-     * counters change.
+     * counters change. The file-descriptor reading is taken here, on the HTTP worker, because
+     * it is the one reading too slow for a tick thread.
      */
     private byte[] renderMetrics() {
         Snapshot snapshot = latest;
@@ -600,8 +606,8 @@ public final class TickScope extends JavaPlugin {
                     && cache.healthRevision == revision && cache.rejectedConnections == rejected) {
                 return cache.bytes;
             }
-            byte[] bytes = PrometheusWriter.render(snapshot, current.health(), scrapeStats)
-                    .getBytes(StandardCharsets.UTF_8);
+            byte[] bytes = PrometheusWriter.render(snapshot, current.health(),
+                    MetricsCollector.descriptors(), scrapeStats).getBytes(StandardCharsets.UTF_8);
             rendered = new RenderedMetrics(snapshot, current, revision, rejected, bytes);
             return bytes;
         }

@@ -44,14 +44,24 @@ final class PrometheusWriter {
     }
 
     static String render(Snapshot s, CollectionHealth health) {
-        return render(s, health, null);
+        return render(s, health, Snapshot.Descriptors.UNAVAILABLE, null);
     }
 
-    /** @param stats the endpoint's own counters, or null when there is no endpoint */
-    static String render(Snapshot s, CollectionHealth health, ScrapeStats stats) {
+    /**
+     * @param descriptors read on the rendering thread, see {@link MetricsCollector#descriptors()}
+     * @param stats       the endpoint's own counters, or null when there is no endpoint
+     */
+    static String render(Snapshot s, CollectionHealth health, Snapshot.Descriptors descriptors,
+                         ScrapeStats stats) {
         StringBuilder b = new StringBuilder(sizeHint);
         String srv = esc(s.serverId());
         snapshot(b, s);
+        optionalGauge(b, "mc_process_open_fds",
+                "Open file descriptors of the server process; absent where the JVM cannot report them",
+                srv, descriptors.open());
+        optionalGauge(b, "mc_process_max_fds",
+                "Maximum open file descriptors allowed for the server process; absent where unavailable",
+                srv, descriptors.max());
         health(b, srv, health);
         if (stats != null) {
             help(b, "mc_http_connections_rejected_total", "counter",
@@ -154,6 +164,29 @@ final class PrometheusWriter {
             b.append("mc_tps{server=\"").append(srv).append("\",window=\"")
              .append(windows[i]).append("\"} ").append(num(tps[i])).append('\n');
         }
+
+        // Absent until the first tick has been observed, so a server that does not fire the
+        // event reads as missing rather than as a flat zero.
+        Snapshot.TickHistogram h = s.tickHistogram();
+        if (h.count() > 0) {
+            help(b, "mc_tick_time_seconds", "histogram",
+                    "Server tick durations since process start, as a cumulative histogram");
+            long[] cumulative = h.cumulativeCounts();
+            double[] bounds = Snapshot.TickHistogram.BOUNDS;
+            for (int i = 0; i < bounds.length; i++) {
+                bucketLine(b, srv, num(bounds[i]), cumulative[i]);
+            }
+            bucketLine(b, srv, "+Inf", cumulative[bounds.length]);
+            b.append("mc_tick_time_seconds_sum{server=\"").append(srv).append("\"} ")
+             .append(num(h.sumSeconds())).append('\n');
+            b.append("mc_tick_time_seconds_count{server=\"").append(srv).append("\"} ")
+             .append(h.count()).append('\n');
+        }
+    }
+
+    private static void bucketLine(StringBuilder b, String srv, String le, long count) {
+        b.append("mc_tick_time_seconds_bucket{server=\"").append(srv).append("\",le=\"")
+         .append(le).append("\"} ").append(count).append('\n');
     }
 
     private static void regions(StringBuilder b, String srv, Snapshot s) {
@@ -196,6 +229,16 @@ final class PrometheusWriter {
         gauge(b, "mc_players_online", "Players currently connected", srv, s.playersOnline());
         gauge(b, "mc_players_max", "Configured player slots", srv, s.playersMax());
         gauge(b, "mc_plugins", "Loaded plugins", srv, s.plugins());
+        // Separate 0/1 gauges rather than info labels: a flag that flips must not start a new
+        // series.
+        Snapshot.ServerInfo info = s.server();
+        if (info != null) {
+            gauge(b, "mc_server_view_distance", "Server-wide view distance in chunks", srv, info.viewDistance());
+            gauge(b, "mc_server_simulation_distance", "Server-wide simulation distance in chunks", srv, info.simulationDistance());
+            gauge(b, "mc_server_online_mode", "1 when players are authenticated against Mojang, 0 otherwise", srv, info.onlineMode() ? 1 : 0);
+            gauge(b, "mc_server_whitelist_enabled", "1 when the whitelist is enabled", srv, info.whitelistEnabled() ? 1 : 0);
+            gauge(b, "mc_server_whitelist_enforced", "1 when non-whitelisted players are disconnected on whitelist reload", srv, info.whitelistEnforced() ? 1 : 0);
+        }
         if (s.pingSamples() > 0) {
             help(b, "mc_player_ping_seconds", "gauge", "Player network latency in seconds");
             statisticLine(b, "mc_player_ping_seconds", srv, "avg", s.pingAverageSeconds());
@@ -210,6 +253,10 @@ final class PrometheusWriter {
             for (Snapshot.WorldStat w : s.worlds()) worldLine(b, "mc_world_chunks", srv, w.name(), w.chunks());
             help(b, "mc_world_players", "gauge", "Players per world");
             for (Snapshot.WorldStat w : s.worlds()) worldLine(b, "mc_world_players", srv, w.name(), w.players());
+            help(b, "mc_world_view_distance", "gauge", "View distance per world in chunks");
+            for (Snapshot.WorldStat w : s.worlds()) worldLine(b, "mc_world_view_distance", srv, w.name(), w.viewDistance());
+            help(b, "mc_world_simulation_distance", "gauge", "Simulation distance per world in chunks");
+            for (Snapshot.WorldStat w : s.worlds()) worldLine(b, "mc_world_simulation_distance", srv, w.name(), w.simulationDistance());
         }
 
         // Sampled on the slower scan cadence, and absent on Folia where a world-wide walk
@@ -230,6 +277,15 @@ final class PrometheusWriter {
                  .append("\"} ").append(t.count()).append('\n');
             }
         }
+
+        if (!s.chunkEvents().isEmpty()) {
+            help(b, "mc_world_chunk_loads_total", "counter", "Chunks loaded per world since server start");
+            for (Snapshot.WorldChunkEvents w : s.chunkEvents()) worldLine(b, "mc_world_chunk_loads_total", srv, w.world(), w.loads());
+            help(b, "mc_world_chunk_unloads_total", "counter", "Chunks unloaded per world since server start");
+            for (Snapshot.WorldChunkEvents w : s.chunkEvents()) worldLine(b, "mc_world_chunk_unloads_total", srv, w.world(), w.unloads());
+            help(b, "mc_world_chunk_generations_total", "counter", "Chunks generated for the first time per world since server start");
+            for (Snapshot.WorldChunkEvents w : s.chunkEvents()) worldLine(b, "mc_world_chunk_generations_total", srv, w.world(), w.generated());
+        }
     }
 
     // ---- jvm --------------------------------------------------------------------------------
@@ -246,6 +302,29 @@ final class PrometheusWriter {
         help(b, "mc_jvm_memory_init_bytes", "gauge", "JVM memory requested at startup");
         areaLine(b, "mc_jvm_memory_init_bytes", srv, "heap", j.heapInit());
         areaLine(b, "mc_jvm_memory_init_bytes", srv, "nonheap", j.nonHeapInit());
+
+        if (!j.pools().isEmpty()) {
+            help(b, "mc_jvm_memory_pool_used_bytes", "gauge", "Memory in use per JVM memory pool");
+            for (Snapshot.MemoryPool p : j.pools()) poolLine(b, "mc_jvm_memory_pool_used_bytes", srv, p, p.used());
+            help(b, "mc_jvm_memory_pool_committed_bytes", "gauge", "Memory committed per JVM memory pool");
+            for (Snapshot.MemoryPool p : j.pools()) poolLine(b, "mc_jvm_memory_pool_committed_bytes", srv, p, p.committed());
+            help(b, "mc_jvm_memory_pool_max_bytes", "gauge", "Memory ceiling per JVM memory pool (-1 when unbounded)");
+            for (Snapshot.MemoryPool p : j.pools()) poolLine(b, "mc_jvm_memory_pool_max_bytes", srv, p, p.max());
+            help(b, "mc_jvm_memory_pool_collection_used_bytes", "gauge",
+                    "Memory in use per pool right after its last collection; absent for pools that do not report it");
+            for (Snapshot.MemoryPool p : j.pools()) {
+                if (!Double.isNaN(p.collectionUsed())) poolLine(b, "mc_jvm_memory_pool_collection_used_bytes", srv, p, p.collectionUsed());
+            }
+        }
+        if (!j.buffers().isEmpty()) {
+            help(b, "mc_jvm_buffer_pool_used_bytes", "gauge",
+                    "Memory used by NIO buffers the JDK tracks (direct, mapped); Netty's pooled direct buffers are not among them");
+            for (Snapshot.BufferPool p : j.buffers()) bufferLine(b, "mc_jvm_buffer_pool_used_bytes", srv, p.name(), p.used());
+            help(b, "mc_jvm_buffer_pool_capacity_bytes", "gauge", "Total capacity of NIO buffers the JDK tracks");
+            for (Snapshot.BufferPool p : j.buffers()) bufferLine(b, "mc_jvm_buffer_pool_capacity_bytes", srv, p.name(), p.capacity());
+            help(b, "mc_jvm_buffer_pool_buffers", "gauge", "Number of NIO buffers the JDK tracks");
+            for (Snapshot.BufferPool p : j.buffers()) bufferLine(b, "mc_jvm_buffer_pool_buffers", srv, p.name(), p.count());
+        }
 
         gauge(b, "mc_jvm_threads_current", "Live threads", srv, j.threadsCurrent());
         gauge(b, "mc_jvm_threads_daemon", "Live daemon threads", srv, j.threadsDaemon());
@@ -313,6 +392,17 @@ final class PrometheusWriter {
     private static void areaLine(StringBuilder b, String name, String srv, String area, double v) {
         b.append(name).append("{server=\"").append(srv).append("\",area=\"")
          .append(area).append("\"} ").append(num(v)).append('\n');
+    }
+
+    private static void poolLine(StringBuilder b, String name, String srv, Snapshot.MemoryPool pool, double v) {
+        b.append(name).append("{server=\"").append(srv).append("\",pool=\"")
+         .append(esc(pool.name())).append("\",area=\"").append(pool.area())
+         .append("\"} ").append(num(v)).append('\n');
+    }
+
+    private static void bufferLine(StringBuilder b, String name, String srv, String pool, double v) {
+        b.append(name).append("{server=\"").append(srv).append("\",pool=\"")
+         .append(esc(pool)).append("\"} ").append(num(v)).append('\n');
     }
 
     private static void gcLine(StringBuilder b, String name, String srv, String gc, double v) {

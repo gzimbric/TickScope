@@ -48,6 +48,11 @@ class CollectorIntegrationTest {
                     case "getOnlinePlayers" -> online;
                     case "getMaxPlayers" -> { if (fail.get()) throw new IllegalStateException("probe"); yield 20; }
                     case "getPluginManager" -> manager;
+                    case "getViewDistance" -> 10;
+                    case "getSimulationDistance" -> 6;
+                    case "getOnlineMode" -> true;
+                    case "hasWhitelist" -> false;
+                    case "isWhitelistEnforced" -> false;
                     default -> throw new UnsupportedOperationException(m.getName());
                 });
         field.set(null, server);
@@ -167,6 +172,20 @@ class CollectorIntegrationTest {
         assertEquals(0.045, sample.pingMaximumSeconds(), 1e-12);
     }
 
+    @Test void chunkCountersAndConfigurationFollowTheWorldFilters() {
+        var events = new EventCounters();
+        events.recordChunkLoad("lobby", true);
+        events.recordChunkLoad("world", false);
+        events.recordChunkUnload("world");
+        worlds = List.of(world("lobby", true, List.of()), world("world", false, List.of()));
+        var c = new MetricsCollector("test", true, true, events, "test", "test", "17", "paper", null,
+                Set.of("lobby"), Set.of());
+        var sample = c.collectPaper();
+        assertEquals(List.of(new Snapshot.WorldChunkEvents("world", 1, 1, 0)), sample.chunkEvents());
+        assertEquals(List.of(new Snapshot.WorldStat("world", 10, 0, 10, 6)), sample.worlds());
+        assertEquals(new Snapshot.ServerInfo(10, 6, true, false, false), sample.server());
+    }
+
     @Test void placeholderSnapshotCarriesRealJvmProcessAndEventReadings() {
         var events = new EventCounters();
         events.recordLogin(org.bukkit.event.player.AsyncPlayerPreLoginEvent.Result.ALLOWED);
@@ -217,6 +236,8 @@ class CollectorIntegrationTest {
                     case "getChunkCount" -> chunks.length;
                     case "getTileEntityCount" -> 3;
                     case "getPlayerCount" -> 0;
+                    case "getViewDistance" -> 10;
+                    case "getSimulationDistance" -> 6;
                     default -> throw new UnsupportedOperationException(m.getName());
                 }));
         var c = collector(true, true, null, Set.of(), Set.of());
@@ -259,6 +280,8 @@ class CollectorIntegrationTest {
                 case "getChunkCount" -> 10;
                 case "getTileEntityCount" -> 3;
                 case "getPlayerCount" -> 0;
+                case "getViewDistance" -> 10;
+                case "getSimulationDistance" -> 6;
                 case "getLoadedChunks" -> new Chunk[]{chunk};
                 default -> throw new UnsupportedOperationException(m.getName());
             };

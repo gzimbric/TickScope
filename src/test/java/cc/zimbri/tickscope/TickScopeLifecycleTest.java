@@ -154,6 +154,11 @@ class TickScopeLifecycleTest {
                         if (failCollection.get()) throw new IllegalStateException("collection failure");
                         yield 20;
                     }
+                    case "getViewDistance" -> 10;
+                    case "getSimulationDistance" -> 6;
+                    case "getOnlineMode" -> true;
+                    case "hasWhitelist" -> false;
+                    case "isWhitelistEnforced" -> false;
                     default -> throw new UnsupportedOperationException(m.getName());
                 });
         Field field = Bukkit.class.getDeclaredField("server");

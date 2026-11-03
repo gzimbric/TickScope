@@ -18,6 +18,7 @@
 package cc.zimbri.tickscope;
 
 import com.sun.management.OperatingSystemMXBean;
+import com.sun.management.UnixOperatingSystemMXBean;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.World;
@@ -25,10 +26,13 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 
+import java.lang.management.BufferPoolMXBean;
 import java.lang.management.ClassLoadingMXBean;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
+import java.lang.management.MemoryPoolMXBean;
+import java.lang.management.MemoryType;
 import java.lang.management.MemoryUsage;
 import java.lang.management.RuntimeMXBean;
 import java.lang.management.ThreadMXBean;
@@ -60,6 +64,7 @@ final class MetricsCollector {
     private final boolean perWorld;
     private final boolean byType;
     private final EventCounters events;
+    private final TickHistogram histogram;
     private final Set<String> excludedWorlds;
     private final Set<String> allowedTypes;
     private final CollectionHealth health;
@@ -74,6 +79,9 @@ final class MetricsCollector {
     private final RuntimeMXBean runtime = ManagementFactory.getRuntimeMXBean();
     private final List<GarbageCollectorMXBean> gcBeans =
             ManagementFactory.getGarbageCollectorMXBeans();
+    private final List<MemoryPoolMXBean> pools = ManagementFactory.getMemoryPoolMXBeans();
+    private final List<BufferPoolMXBean> buffers =
+            ManagementFactory.getPlatformMXBeans(BufferPoolMXBean.class);
 
     /**
      * Everything that needs to walk the world rather than read a counter, kept on its own
@@ -99,6 +107,14 @@ final class MetricsCollector {
                      String tickScopeVersion, String paperVersion, String javaVersion,
                      String platform, HeavyWorldData carried, Set<String> excludedWorlds,
                      Set<String> allowedTypes) {
+        this(serverId, perWorld, byType, events, null, tickScopeVersion, paperVersion,
+                javaVersion, platform, carried, excludedWorlds, allowedTypes);
+    }
+
+    MetricsCollector(String serverId, boolean perWorld, boolean byType, EventCounters events,
+                     TickHistogram histogram, String tickScopeVersion, String paperVersion,
+                     String javaVersion, String platform, HeavyWorldData carried,
+                     Set<String> excludedWorlds, Set<String> allowedTypes) {
         this.excludedWorlds = Set.copyOf(excludedWorlds);
         this.allowedTypes = Set.copyOf(allowedTypes);
         this.health = new CollectionHealth(!platform.equals("folia") && (perWorld || byType),
@@ -107,6 +123,7 @@ final class MetricsCollector {
         this.perWorld = perWorld;
         this.byType = byType;
         this.events = events;
+        this.histogram = histogram;
         this.tickScopeVersion = tickScopeVersion;
         this.paperVersion = paperVersion;
         this.javaVersion = javaVersion;
@@ -139,9 +156,10 @@ final class MetricsCollector {
      */
     Snapshot initialSnapshot() {
         return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion, platform,
-                0d, 0d, Snapshot.Ticks.EMPTY, new double[]{0, 0, 0},
-                0, 0, 0, 0d, 0d, 0,
-                List.of(), List.of(), List.of(), List.of(), List.of(),
+                0d, 0d, Snapshot.Ticks.EMPTY, Snapshot.TickHistogram.EMPTY, new double[]{0, 0, 0},
+                0, 0, 0, 0d, 0d, 0, null,
+                List.of(), List.of(), List.of(), events.chunkEvents(this::includedWorld),
+                List.of(), List.of(),
                 jvm(), proc(), events.snapshot());
     }
 
@@ -207,34 +225,40 @@ final class MetricsCollector {
         // series are deliberately absent. Region TPS and MSPT are sampled separately at player
         // locations when the server exposes the corresponding regional APIs.
         Snapshot.Ticks ticks = folia ? Snapshot.Ticks.EMPTY : summarise(Bukkit.getTickTimes());
+        Snapshot.TickHistogram tickHistogram = folia || histogram == null
+                ? Snapshot.TickHistogram.EMPTY : histogram.snapshot();
         double[] tps = folia ? new double[0] : Bukkit.getTPS();
 
         List<Snapshot.WorldStat> worlds = new ArrayList<>();
         if (perWorld) {
             for (World w : Bukkit.getWorlds()) {
                 if (!includedWorld(w.getName())) continue;
-                // Only genuine counter reads belong here: getFullChunksCount and the world's
-                // own player list. Entity and tile-entity totals iterate, so they live on the
-                // slower scan instead.
-                worlds.add(new Snapshot.WorldStat(w.getName(), w.getChunkCount(), w.getPlayerCount()));
+                // Only genuine counter and configuration reads belong here. Entity and
+                // tile-entity totals iterate, so they live on the slower scan instead.
+                worlds.add(new Snapshot.WorldStat(w.getName(), w.getChunkCount(), w.getPlayerCount(),
+                        w.getViewDistance(), w.getSimulationDistance()));
             }
         }
 
         PlayerSample playerSample = folia ? foliaPlayerSample() : paperPlayers();
         HeavyWorldData scan = heavy;
 
+        Snapshot.ServerInfo server = new Snapshot.ServerInfo(Bukkit.getViewDistance(),
+                Bukkit.getSimulationDistance(), Bukkit.getOnlineMode(), Bukkit.hasWhitelist(),
+                Bukkit.isWhitelistEnforced());
         Snapshot.Jvm jvm = jvm();
         Snapshot.Proc proc = proc();
         Map<String, Long> eventCounts = events.snapshot();
+        List<Snapshot.WorldChunkEvents> chunkEvents = events.chunkEvents(this::includedWorld);
         double collectionSeconds = (System.nanoTime() - started) / NANOS_PER_SEC;
         return new Snapshot(serverId, tickScopeVersion, paperVersion, javaVersion, platform,
-                collectionSeconds, scan.seconds(), ticks, tps,
+                collectionSeconds, scan.seconds(), ticks, tickHistogram, tps,
                 folia ? foliaOnlinePlayers : playerSample.online(), Bukkit.getMaxPlayers(),
                 Bukkit.getPluginManager().getPlugins().length,
                 playerSample.pingAverageSeconds(), playerSample.pingMaximumSeconds(),
-                playerSample.pingSamples(),
+                playerSample.pingSamples(), server,
                 List.copyOf(worlds), perWorld ? scan.totals() : List.of(),
-                byType ? scan.types() : List.of(),
+                byType ? scan.types() : List.of(), chunkEvents,
                 playerSample.regionTps(), playerSample.regionTickDurations(),
                 jvm, proc, eventCounts);
     }
@@ -375,18 +399,54 @@ final class MetricsCollector {
             gcs.add(new Snapshot.Gc(gc.getName(), count,
                     millis < 0L ? Double.NaN : millis / 1000d));
         }
+        List<Snapshot.MemoryPool> poolReadings = new ArrayList<>(pools.size());
+        for (MemoryPoolMXBean pool : pools) {
+            if (!pool.isValid()) continue;
+            MemoryUsage usage = pool.getUsage();
+            if (usage == null) continue;
+            // Usage right after the last collection is the honest occupancy of a generational
+            // pool; the live figure oscillates with every allocation. Not every pool has it.
+            MemoryUsage collected = pool.getCollectionUsage();
+            poolReadings.add(new Snapshot.MemoryPool(pool.getName(),
+                    pool.getType() == MemoryType.HEAP ? "heap" : "nonheap",
+                    usage.getUsed(), usage.getCommitted(), usage.getMax(),
+                    collected == null ? Double.NaN : collected.getUsed()));
+        }
+        List<Snapshot.BufferPool> bufferReadings = new ArrayList<>(buffers.size());
+        for (BufferPoolMXBean buffer : buffers) {
+            bufferReadings.add(new Snapshot.BufferPool(buffer.getName(), buffer.getCount(),
+                    buffer.getTotalCapacity(), buffer.getMemoryUsed()));
+        }
         return new Snapshot.Jvm(
                 heapUsage.getUsed(), heapUsage.getCommitted(), heapUsage.getMax(), heapUsage.getInit(),
                 non.getUsed(), non.getCommitted(), non.getMax(), non.getInit(),
                 threads.getThreadCount(), threads.getDaemonThreadCount(),
                 threads.getPeakThreadCount(), threads.getTotalStartedThreadCount(),
-                classes.getLoadedClassCount(), List.copyOf(gcs));
+                classes.getLoadedClassCount(), List.copyOf(gcs), poolReadings, bufferReadings);
     }
 
     private Snapshot.Proc proc() {
         return new Snapshot.Proc(ratio(os.getProcessCpuLoad()), ratio(os.getCpuLoad()),
                 cpuSeconds(os.getProcessCpuTime()),
                 runtime.getStartTime() / 1000d, runtime.getUptime() / 1000d);
+    }
+
+    /**
+     * Counting open descriptors walks {@code /proc/self/fd} on Linux, a few hundred
+     * microseconds on a busy server, which is more than the rest of a collection put together.
+     * It is therefore read where the body is rendered, on an HTTP worker, never on a tick thread.
+     * Unavailable (NaN) outside Unix-like JVMs.
+     */
+    static Snapshot.Descriptors descriptors() {
+        if (ManagementFactory.getOperatingSystemMXBean() instanceof UnixOperatingSystemMXBean unix) {
+            try {
+                return new Snapshot.Descriptors(unix.getOpenFileDescriptorCount(),
+                        unix.getMaxFileDescriptorCount());
+            } catch (RuntimeException unsupported) {
+                return Snapshot.Descriptors.UNAVAILABLE;
+            }
+        }
+        return Snapshot.Descriptors.UNAVAILABLE;
     }
 
     /**
