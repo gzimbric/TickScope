@@ -560,12 +560,275 @@
       "id": 10
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "histogram_quantile over the cumulative tick histogram. Unlike the exact percentiles above, these aggregate across any window and across servers, at the resolution of the histogram buckets.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.025
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 14
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, server) (rate(mc_tick_time_seconds_bucket{server=~\"$server\"}[$__rate_interval])))",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 p50",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, server) (rate(mc_tick_time_seconds_bucket{server=~\"$server\"}[$__rate_interval])))",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 p95",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, server) (rate(mc_tick_time_seconds_bucket{server=~\"$server\"}[$__rate_interval])))",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 p99",
+          "range": true,
+          "refId": "C"
+        }
+      ],
+      "title": "Tick time quantiles from the histogram",
+      "type": "timeseries",
+      "id": 36
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Ticks completed per second from the histogram count. Unlike mc_tps it is not capped at 20 or smoothed, and it drops to zero while Paper pauses an empty server.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 18
+              },
+              {
+                "color": "green",
+                "value": 19.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 14
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(mc_tick_time_seconds_count{server=~\"$server\"}[$__rate_interval])",
+          "instant": false,
+          "legendFormat": "{{server}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Actual ticks per second",
+      "type": "timeseries",
+      "id": 37
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Share of ticks per duration bucket over time. A band creeping upward is a server getting slower everywhere; a scattered top row is occasional stalls.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Oranges",
+          "steps": 64
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-09
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "showValue": "never",
+        "tooltip": {
+          "mode": "single",
+          "showColorScale": false,
+          "yHistogram": true
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false,
+          "unit": "s"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "sum by (le) (rate(mc_tick_time_seconds_bucket{server=~\"$server\"}[$__rate_interval]))",
+          "format": "heatmap",
+          "instant": false,
+          "legendFormat": "{{le}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Tick time distribution",
+      "type": "heatmap",
+      "id": 38
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 30
       },
       "panels": [],
       "title": "Folia regions",
@@ -598,7 +861,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 15
+        "y": 31
       },
       "options": {
         "legend": {
@@ -685,7 +948,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 15
+        "y": 31
       },
       "options": {
         "legend": {
@@ -732,7 +995,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 23
+        "y": 39
       },
       "panels": [],
       "title": "Memory and CPU",
@@ -765,7 +1028,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 24
+        "y": 40
       },
       "options": {
         "legend": {
@@ -847,7 +1110,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 24
+        "y": 40
       },
       "options": {
         "legend": {
@@ -893,12 +1156,132 @@
       "id": 16
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Occupancy right after each pool was last collected: the leak signal the live heap gauge cannot give, because the live figure oscillates with every allocation. Pool names depend on the collector in use.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mc_jvm_memory_pool_collection_used_bytes{server=~\"$server\"}",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 {{pool}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Memory pools after the last collection",
+      "type": "timeseries",
+      "id": 39
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Direct and mapped buffers the JDK tracks. Netty's pooled network buffers are allocated outside this accounting on HotSpot, so this is a lower bound for direct memory.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mc_jvm_buffer_pool_used_bytes{server=~\"$server\"}",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 {{pool}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "NIO buffer pools",
+      "type": "timeseries",
+      "id": 40
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 32
+        "y": 56
       },
       "panels": [],
       "title": "JVM",
@@ -931,7 +1314,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 33
+        "y": 57
       },
       "options": {
         "legend": {
@@ -991,7 +1374,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 33
+        "y": 57
       },
       "options": {
         "legend": {
@@ -1053,7 +1436,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 65
       },
       "panels": [],
       "title": "Worlds",
@@ -1086,7 +1469,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 42
+        "y": 66
       },
       "options": {
         "legend": {
@@ -1146,7 +1529,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 42
+        "y": 66
       },
       "options": {
         "legend": {
@@ -1206,7 +1589,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 42
+        "y": 66
       },
       "options": {
         "legend": {
@@ -1266,7 +1649,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 50
+        "y": 74
       },
       "options": {
         "legend": {
@@ -1326,7 +1709,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 50
+        "y": 74
       },
       "options": {
         "legend": {
@@ -1361,12 +1744,143 @@
       "id": 25
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Chunk churn per second. The loaded-chunk gauge hides it because loads and unloads cancel out; a high churn with a flat chunk count is players moving at the view-distance edge.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 82
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(mc_world_chunk_loads_total{server=~\"$server\"}[$__rate_interval])",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 {{world}} \u00b7 loads",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(mc_world_chunk_unloads_total{server=~\"$server\"}[$__rate_interval])",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 {{world}} \u00b7 unloads",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Chunk loads and unloads by world",
+      "type": "timeseries",
+      "id": 41
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Chunks created for the first time per second. Generation is the most expensive thing a tick does; sustained values point at exploration or a missing pregeneration.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 82
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "rate(mc_world_chunk_generations_total{server=~\"$server\"}[$__rate_interval])",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 {{world}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Chunks generated by world",
+      "type": "timeseries",
+      "id": 42
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 90
       },
       "panels": [],
       "title": "Players and events",
@@ -1399,7 +1913,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 59
+        "y": 91
       },
       "options": {
         "legend": {
@@ -1459,7 +1973,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 59
+        "y": 91
       },
       "options": {
         "legend": {
@@ -1530,7 +2044,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 59
+        "y": 91
       },
       "options": {
         "legend": {
@@ -1570,7 +2084,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 67
+        "y": 99
       },
       "panels": [],
       "title": "Exporter",
@@ -1603,7 +2117,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 68
+        "y": 100
       },
       "options": {
         "legend": {
@@ -1674,7 +2188,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 68
+        "y": 100
       },
       "options": {
         "legend": {
@@ -1734,7 +2248,7 @@
         "h": 7,
         "w": 12,
         "x": 0,
-        "y": 74
+        "y": 106
       },
       "options": {
         "legend": {
@@ -1794,7 +2308,7 @@
         "h": 7,
         "w": 12,
         "x": 12,
-        "y": 74
+        "y": 106
       },
       "options": {
         "legend": {
@@ -1854,7 +2368,7 @@
         "h": 7,
         "w": 24,
         "x": 0,
-        "y": 81
+        "y": 113
       },
       "options": {
         "legend": {
@@ -1887,6 +2401,137 @@
       "title": "Folia player sample coverage",
       "type": "timeseries",
       "id": 35
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Open versus allowed file descriptors. Region files and sockets both count; running out stops the server from opening worlds and connections.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 120
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mc_process_open_fds{server=~\"$server\"}",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 open",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "mc_process_max_fds{server=~\"$server\"}",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 limit",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "File descriptors",
+      "type": "timeseries",
+      "id": 43
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "description": "Connections closed before a request was read, by reason. per_address means one client address exceeded max-connections-per-address, typically several scrapers behind one proxy; saturated means every worker and queue slot was held by stalled clients.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "axisSoftMin": 0,
+            "fillOpacity": 12,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 120
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "max"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "increase(mc_http_connections_rejected_total{server=~\"$server\"}[$__rate_interval])",
+          "instant": false,
+          "legendFormat": "{{server}} \u00b7 {{reason}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Connections the endpoint turned away",
+      "type": "timeseries",
+      "id": 44
     }
   ],
   "refresh": "30s",

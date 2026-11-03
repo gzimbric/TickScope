@@ -55,6 +55,14 @@
         {
           "series": "mc_folia_player_samples_expected{server=\"test\"}",
           "values": "2+0x20"
+        },
+        {
+          "series": "mc_process_open_fds{server=\"test\"}",
+          "values": "900+0x20"
+        },
+        {
+          "series": "mc_process_max_fds{server=\"test\"}",
+          "values": "1000+0x20"
         }
       ],
       "alert_rule_test": [
@@ -234,11 +242,32 @@
               }
             }
           ]
+        },
+        {
+          "eval_time": "1m",
+          "alertname": "TickScopeFileDescriptorsNearLimit",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeFileDescriptorsNearLimit",
+          "exp_alerts": [
+            {
+              "exp_labels": {
+                "server": "test",
+                "severity": "warning"
+              },
+              "exp_annotations": {
+                "summary": "Minecraft test is near its file descriptor limit",
+                "description": "More than 80% of the allowed file descriptors have been open for ten minutes. Raise the limit (ulimit -n or LimitNOFILE) before the server fails with \"Too many open files\". The series is absent where the JVM cannot report it."
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "Disabled stages, empty servers, unsupported MSPT and unbounded heap do not alert",
+      "name": "Disabled stages, empty servers, unsupported MSPT, unbounded heap and a roomy descriptor limit do not alert",
       "interval": "1m",
       "input_series": [
         {
@@ -284,6 +313,14 @@
         {
           "series": "mc_folia_player_samples_expected{server=\"test\"}",
           "values": "0+0x20"
+        },
+        {
+          "series": "mc_process_open_fds{server=\"test\"}",
+          "values": "100+0x20"
+        },
+        {
+          "series": "mc_process_max_fds{server=\"test\"}",
+          "values": "1000+0x20"
         }
       ],
       "alert_rule_test": [
@@ -325,6 +362,11 @@
         {
           "eval_time": "11m",
           "alertname": "TickScopeFoliaIncompleteCoverage",
+          "exp_alerts": []
+        },
+        {
+          "eval_time": "11m",
+          "alertname": "TickScopeFileDescriptorsNearLimit",
           "exp_alerts": []
         }
       ]

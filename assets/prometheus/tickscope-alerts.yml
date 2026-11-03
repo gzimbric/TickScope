@@ -71,3 +71,11 @@ groups:
         annotations:
           summary: 'Folia {{ $labels.server }} has incomplete player sampling'
           description: 'Regional and ping summaries exclude missing player samples. Check lagging regions and player retirement.'
+      - alert: TickScopeFileDescriptorsNearLimit
+        expr: mc_process_open_fds / mc_process_max_fds > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Minecraft {{ $labels.server }} is near its file descriptor limit'
+          description: 'More than 80% of the allowed file descriptors have been open for ten minutes. Raise the limit (ulimit -n or LimitNOFILE) before the server fails with "Too many open files". The series is absent where the JVM cannot report it.'
